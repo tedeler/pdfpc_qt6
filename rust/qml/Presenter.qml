@@ -43,6 +43,19 @@ Window {
                     pointerY: root.ctrl.pointer_y
                     interactive: true
                     ctrl: root.ctrl
+
+                    // The audience does not see this slide: blanked or frozen.
+                    Rectangle {
+                        x: currentSlide.pageX - 4
+                        y: currentSlide.pageY - 4
+                        width: currentSlide.pageW + 8
+                        height: currentSlide.pageH + 8
+                        color: "transparent"
+                        border.width: 4
+                        border.color: root.ctrl.blank ? "#808080" : "#2f8fd8"
+                        visible: root.ctrl.blank || root.ctrl.frozen
+                        z: 10
+                    }
                 }
 
                 SlideView {
@@ -62,70 +75,91 @@ Window {
 
             Rectangle {
                 id: bottomBar
+                readonly property int fontSize: Math.round(height * 0.5)
                 width: parent.width
-                height: 48
+                height: Math.max(40, Math.round(root.height * 0.08))
                 color: "#111111"
                 radius: 4
 
+                Text {
+                    id: pageText
+                    anchors.left: parent.left
+                    anchors.leftMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: root.ctrl.goto_active ? "Go to: " + root.ctrl.goto_buffer + "_"
+                                                : "Slide " + root.ctrl.page_label
+                    color: root.ctrl.goto_active ? "#7ec8ff" : "#f0f0f0"
+                    font.pixelSize: bottomBar.fontSize
+                    font.family: "DejaVu Sans"
+                }
+
+                Text {
+                    id: timerText
+                    anchors.centerIn: parent
+                    text: root.ctrl.timer_text
+                    color: root.ctrl.timer_paused ? "#f0c040" : "#f0f0f0"
+                    font.pixelSize: Math.round(bottomBar.fontSize * 1.25)
+                    font.family: "DejaVu Sans Mono"
+                    font.bold: true
+                }
+
+                Text {
+                    anchors.left: timerText.right
+                    anchors.leftMargin: 12
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: root.ctrl.timer_paused
+                    text: "paused"
+                    color: "#f0c040"
+                    font.pixelSize: Math.round(bottomBar.fontSize * 0.7)
+                }
+
                 Row {
-                    anchors.fill: parent
-                    anchors.margins: 12
-                    spacing: 24
+                    anchors.right: clockText.left
+                    anchors.rightMargin: 20
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing: 8
 
-                    Text {
-                        text: root.ctrl.page_label
-                        color: "#f0f0f0"
-                        font.pixelSize: 22
-                        font.family: "DejaVu Sans"
-                        verticalAlignment: Text.AlignVCenter
-                        height: parent.height
+                    Repeater {
+                        model: [
+                            { on: root.ctrl.blank, label: "BLANK", color: "#808080" },
+                            { on: root.ctrl.frozen, label: "FROZEN", color: "#2f8fd8" },
+                            { on: root.ctrl.mode === 1, label: "LASER", color: "#d83030" },
+                            { on: root.ctrl.mode === 2, label: "PEN", color: "#d83030" }
+                        ]
+                        Rectangle {
+                            visible: modelData.on
+                            width: badgeText.implicitWidth + 16
+                            height: bottomBar.height * 0.62
+                            radius: 4
+                            color: modelData.color
+                            Text {
+                                id: badgeText
+                                anchors.centerIn: parent
+                                text: modelData.label
+                                color: "#ffffff"
+                                font.pixelSize: Math.round(bottomBar.fontSize * 0.7)
+                                font.bold: true
+                            }
+                        }
                     }
+                }
 
-                    Text {
-                        text: root.ctrl.timer_text + (root.ctrl.timer_paused ? " (paused)" : "")
-                        color: root.ctrl.timer_paused ? "#f0c040" : "#f0f0f0"
-                        font.pixelSize: 22
-                        font.family: "DejaVu Sans Mono"
-                        verticalAlignment: Text.AlignVCenter
-                        height: parent.height
-                    }
+                Text {
+                    id: clockText
+                    property string now: Qt.formatTime(new Date(), "hh:mm")
+                    anchors.right: parent.right
+                    anchors.rightMargin: 16
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: now
+                    color: "#a0a0a0"
+                    font.pixelSize: bottomBar.fontSize
+                    font.family: "DejaVu Sans Mono"
 
-                    Text {
-                        visible: root.ctrl.goto_active
-                        text: "Go to: " + root.ctrl.goto_buffer
-                        color: "#7ec8ff"
-                        font.pixelSize: 22
-                        font.family: "DejaVu Sans"
-                        verticalAlignment: Text.AlignVCenter
-                        height: parent.height
-                    }
-
-                    Text {
-                        visible: root.ctrl.mode !== 0
-                        text: root.ctrl.mode === 1 ? "Laser" : "Pen"
-                        color: "#ff6666"
-                        font.pixelSize: 20
-                        font.family: "DejaVu Sans"
-                        verticalAlignment: Text.AlignVCenter
-                        height: parent.height
-                    }
-
-                    Text {
-                        visible: root.ctrl.frozen
-                        text: "Frozen"
-                        color: "#66ccff"
-                        font.pixelSize: 20
-                        verticalAlignment: Text.AlignVCenter
-                        height: parent.height
-                    }
-
-                    Text {
-                        visible: root.ctrl.blank
-                        text: "Blank"
-                        color: "#aaaaaa"
-                        font.pixelSize: 20
-                        verticalAlignment: Text.AlignVCenter
-                        height: parent.height
+                    Timer {
+                        interval: 1000
+                        running: true
+                        repeat: true
+                        onTriggered: clockText.now = Qt.formatTime(new Date(), "hh:mm")
                     }
                 }
             }
