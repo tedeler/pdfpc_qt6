@@ -30,12 +30,15 @@ QtObject {
         }
     }
 
+    // Closing either window ends the presentation.
     property Presenter presenterWindow: Presenter {
         ctrl: root.session
+        onClosing: Qt.quit()
     }
 
     property Audience audienceWindow: Audience {
         ctrl: root.session
+        onClosing: Qt.quit()
     }
 
     property Timer tickTimer: Timer {
