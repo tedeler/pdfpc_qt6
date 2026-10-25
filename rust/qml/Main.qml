@@ -79,6 +79,7 @@ QtObject {
         function onPresenter_screenChanged() { root.schedulePlacement() }
         function onAudience_screenChanged() { root.schedulePlacement() }
         function onWindowedChanged() { root.schedulePlacement() }
+        function onQuitRequested() { Qt.quit() }
     }
 
     property Connections screenConnections: Connections {

@@ -32,8 +32,13 @@ pub mod qobject {
         #[qproperty(i32, presenter_screen)]
         #[qproperty(i32, audience_screen)]
         #[qproperty(bool, windowed)]
+        #[qproperty(bool, help_visible)]
         #[namespace = "pdfpc"]
         type Session = super::SessionRust;
+
+        #[qsignal]
+        #[cxx_name = "quitRequested"]
+        fn quit_requested(self: Pin<&mut Self>);
 
         #[qinvokable]
         #[cxx_name = "loadPdf"]
@@ -193,6 +198,7 @@ pub struct SessionRust {
     presenter_screen: i32,
     audience_screen: i32,
     windowed: bool,
+    help_visible: bool,
 
     strokes: HashMap<i32, Vec<Stroke>>,
     drawing: bool,
@@ -227,6 +233,7 @@ impl Default for SessionRust {
             presenter_screen: 0,
             audience_screen: 1,
             windowed: false,
+            help_visible: false,
             strokes: HashMap::new(),
             drawing: false,
             timer_started: false,
@@ -413,6 +420,17 @@ impl qobject::Session {
         let shift = modifiers & SHIFT_MODIFIER != 0;
         let ctrl = modifiers & CTRL_MODIFIER != 0;
         let text_str = text.to_string();
+        let ch = text_str.chars().next();
+
+        // While the help is shown only h / Escape / q do anything.
+        if *self.help_visible() {
+            match (key, ch) {
+                (KEY_ESCAPE, _) | (_, Some('h' | 'H')) => self.set_help_visible(false),
+                (_, Some('q' | 'Q')) => self.quit_requested(),
+                _ => {}
+            }
+            return;
+        }
 
         if *self.goto_active() {
             self.handle_goto_key(key, &text_str);
@@ -452,6 +470,8 @@ impl qobject::Session {
                         'g' | 'G' => self.begin_goto(),
                         'c' | 'C' => self.clear_drawings(),
                         'p' | 'P' => self.toggle_pause(),
+                        'h' | 'H' => self.set_help_visible(true),
+                        'q' | 'Q' => self.quit_requested(),
                         '1' => self.set_mode_internal(MODE_NORMAL),
                         '2' => self.set_mode_internal(MODE_LASER),
                         '3' => self.set_mode_internal(MODE_PEN),
@@ -520,7 +540,7 @@ impl qobject::Session {
     }
 
     pub fn mouse_click(self: Pin<&mut Self>, button: i32) {
-        if *self.mode() != MODE_NORMAL {
+        if *self.mode() != MODE_NORMAL || *self.help_visible() {
             return;
         }
         match button {

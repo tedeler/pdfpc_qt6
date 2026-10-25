@@ -48,26 +48,31 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 
 | Key | Action |
 |---|---|
-| ←/→, ↑/↓, Space, Enter, Page Up/Down | Previous / next (normal mode) |
-| Left click / right click | Next / previous (normal mode) |
-| Home / End | First / last page |
-| `g`, digits, Enter | Go to page (1-based) |
+| →, ↓, Space, Enter, Page Down / left click | Next slide (normal mode) |
+| ←, ↑, Backspace, Page Up / right click | Previous slide (normal mode) |
+| Home / End | First / last slide |
+| `g`, digits, Enter | Go to slide (1-based) |
 | `b` | Blank audience (black) |
-| `f` | Freeze audience on the current page + strokes |
-| Escape | Clear blank / freeze / goto / pause / mode |
-| `2` | Laser pointer |
-| `3` | Pen (red stroke, fixed width) |
-| `c` | Clear strokes on the current page |
+| `f` | Freeze audience on the current slide + strokes |
 | `1` | Normal mouse |
-| `p` | Pause timer |
+| `2` | Laser pointer |
+| `+` / `-` | Larger / smaller laser pointer |
+| `3` | Pen (red stroke, fixed width) |
+| `c` | Clear strokes on the current slide |
+| `p` | Pause / resume timer |
 | Ctrl+T | Reset timer |
-| Shift+S | Swap screens |
+| Shift+S | Swap presenter and audience screens |
+| `h` | Show / hide the shortcut help (presenter only) |
+| Escape | Close help, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
+| `q` | Quit |
+
+Keys work in both windows. While the help is open only `h`, Escape and `q` act. Unlike classic pdfpc, `h` shows help instead of hiding the presentation.
 
 Timer starts when you leave page 1. Shown only on the presenter.
 
 ## Out of scope
 
-`pdfpcrc`, sidecars, notes, overlays, overview, movies, links, transitions, REST, QR, D-Bus, eraser, pen colors, undo, persistent drawings, Windows.
+`pdfpcrc`, sidecars, notes, overlays, overview, movies, links, transitions, REST, QR, D-Bus remote control, eraser, pen colors, undo, persistent drawings, Windows.
 
 ## PDF rendering
 
