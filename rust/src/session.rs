@@ -135,7 +135,7 @@ pub mod qobject {
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::QString;
+use cxx_qt_lib::{QString, QUrl};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
@@ -248,11 +248,19 @@ impl qobject::Session {
     pub fn load_pdf(mut self: Pin<&mut Self>, path: &QString) {
         let path_str = path.to_string();
         let url = if path_str.starts_with("file:") {
-            path_str
+            QString::from(&path_str)
         } else {
-            format!("file://{path_str}")
+            // Relative paths and characters like '#' or spaces must survive
+            // the conversion to a file URL.
+            let absolute = std::fs::canonicalize(&path_str).unwrap_or_else(|_| {
+                std::env::current_dir()
+                    .map(|dir| dir.join(&path_str))
+                    .unwrap_or_else(|_| path_str.clone().into())
+            });
+            let absolute = QString::from(absolute.to_string_lossy().as_ref());
+            QUrl::from_user_input(&absolute, &QString::default()).to_qstring()
         };
-        self.as_mut().set_pdf_url(QString::from(&url));
+        self.as_mut().set_pdf_url(url);
         self.as_mut().set_current_page(0);
         self.refresh_derived();
     }
