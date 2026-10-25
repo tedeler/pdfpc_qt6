@@ -38,14 +38,12 @@ Item {
         id: presenterWindow
         ctrl: session
         windowed: session.windowed
-        screen: root.screenAt(session.presenter_screen)
     }
 
     Audience {
         id: audienceWindow
         ctrl: session
         windowed: session.windowed
-        screen: root.screenAt(session.audience_screen)
     }
 
     Timer {
@@ -53,6 +51,29 @@ Item {
         running: true
         repeat: true
         onTriggered: session.tick()
+    }
+
+    // Wayland/KWin often ignores FullScreen set before the surface is mapped.
+    // Show windowed first, then request fullscreen / screen assignment.
+    Timer {
+        id: placeTimer
+        interval: 50
+        repeat: false
+        onTriggered: root.placeWindows()
+    }
+
+    function placeWindows() {
+        var screens = Qt.application.screens
+        var n = screens ? screens.length : 0
+        console.log("pdfpc: screens=" + n
+                    + " windowed=" + session.windowed
+                    + " presenterScreen=" + session.presenter_screen
+                    + " audienceScreen=" + session.audience_screen)
+
+        presenterWindow.screen = root.screenAt(session.presenter_screen)
+        audienceWindow.screen = root.screenAt(session.audience_screen)
+        presenterWindow.applyPlacement()
+        audienceWindow.applyPlacement()
     }
 
     Component.onCompleted: {
@@ -70,6 +91,16 @@ Item {
                 pdfPath = args[i]
             }
         }
+
+        var screens = Qt.application.screens
+        if (!windowed && (!screens || screens.length < 2)) {
+            console.log("pdfpc: only " + (screens ? screens.length : 0)
+                        + " screen(s); forcing --windowed")
+            windowed = true
+            session.presenter_screen = 0
+            session.audience_screen = 0
+        }
+
         session.configureWindowed(windowed)
         if (pdfPath === "") {
             console.log("Usage: pdfpc [--windowed] <file.pdf>")
@@ -77,12 +108,6 @@ Item {
             return
         }
         session.loadPdf(pdfPath)
-
-        var screens = Qt.application.screens
-        if (!screens || screens.length < 2) {
-            session.configureWindowed(true)
-            session.presenter_screen = 0
-            session.audience_screen = 0
-        }
+        placeTimer.start()
     }
 }

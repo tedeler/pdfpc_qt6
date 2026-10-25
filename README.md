@@ -35,6 +35,7 @@ pdfpc [--windowed|-w] presentation.pdf
 
 - Two monitors: presenter on the primary screen, audience on the secondary (fullscreen).
 - One monitor / CI: automatically falls back to `--windowed` with both windows on screen 0.
+- If nothing appears under KDE/Wayland, try `pdfpc --windowed file.pdf` or `QT_QPA_PLATFORM=xcb pdfpc file.pdf` (XWayland). Watch the console for `pdfpc: screens=…`.
 - `Shift+S` swaps presenter and audience screens at runtime.
 
 ## Keys
