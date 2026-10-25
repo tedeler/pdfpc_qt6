@@ -6,40 +6,19 @@ import org.pdfpc.app
 Window {
     id: root
     required property var ctrl
-    property bool windowed: false
 
     title: "pdfpc — audience"
     color: "#000000"
-    // Start mapped as a normal window; fullscreen is requested after show on Wayland.
-    visible: false
-    width: windowed ? 640 : (screen ? Math.max(640, screen.width) : 960)
-    height: windowed ? 480 : (screen ? Math.max(480, screen.height) : 540)
-    visibility: Window.Windowed
-    x: windowed ? 1280 : 0
-    y: 0
 
-    function applyPlacement() {
-        if (root.windowed) {
-            root.visibility = Window.Windowed
-            root.width = 640
-            root.height = 480
-            root.x = 1280
-            root.y = 0
-        } else if (root.screen) {
-            root.visibility = Window.FullScreen
+    Item {
+        id: keyTarget
+        anchors.fill: parent
+        focus: true
+
+        Keys.onPressed: function (event) {
+            root.ctrl.handleKey(event.key, event.modifiers, event.text)
+            event.accepted = true
         }
-        root.visible = true
-        root.raise()
-    }
-
-    onScreenChanged: {
-        if (root.visible && !root.windowed && root.screen)
-            root.visibility = Window.FullScreen
-    }
-
-    onWindowedChanged: {
-        if (root.visible)
-            root.applyPlacement()
     }
 
     SlideView {
@@ -63,4 +42,6 @@ Window {
         opacity: root.ctrl.blank ? 1 : 0
         z: 100
     }
+
+    onActiveChanged: if (active) keyTarget.forceActiveFocus()
 }

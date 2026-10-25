@@ -6,42 +6,9 @@ import org.pdfpc.app
 Window {
     id: root
     required property var ctrl
-    property bool windowed: false
 
     title: "pdfpc — presenter"
     color: "#1a1a1a"
-    // Start mapped as a normal window; fullscreen is requested after show on Wayland.
-    visible: false
-    width: windowed ? 1280 : (screen ? Math.max(800, screen.width) : 1280)
-    height: windowed ? 800 : (screen ? Math.max(600, screen.height) : 800)
-    visibility: Window.Windowed
-    x: 0
-    y: 0
-
-    function applyPlacement() {
-        if (root.windowed) {
-            root.visibility = Window.Windowed
-            root.width = 1280
-            root.height = 800
-            root.x = 0
-            root.y = 0
-        } else if (root.screen) {
-            root.visibility = Window.FullScreen
-        }
-        root.visible = true
-        root.raise()
-        root.requestActivate()
-    }
-
-    onScreenChanged: {
-        if (root.visible && !root.windowed && root.screen)
-            root.visibility = Window.FullScreen
-    }
-
-    onWindowedChanged: {
-        if (root.visible)
-            root.applyPlacement()
-    }
 
     FocusScope {
         id: focusScope
