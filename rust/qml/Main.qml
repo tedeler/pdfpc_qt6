@@ -61,6 +61,19 @@ QtObject {
         onTriggered: root.enterFullScreen()
     }
 
+    property KWinPlacer placer: KWinPlacer {}
+
+    // Without KWin scripting the presenter is moved to its output by a short
+    // fullscreen request there and then restored to a normal window. KWin
+    // restores the previous geometry though, so this only helps at startup.
+    property Timer presenterRestoreTimer: Timer {
+        interval: 250
+        onTriggered: root.restorePresenter()
+    }
+
+    readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
+    readonly property real presenterScale: Math.SQRT1_2
+
     property Connections sessionConnections: Connections {
         target: root.session
         function onPresenter_screenChanged() { root.schedulePlacement() }
@@ -129,6 +142,13 @@ QtObject {
         win.visibility = Window.Windowed
     }
 
+    function showPresenterCentered(screen) {
+        var m = (1 - presenterScale) / 2
+        showWindowed(presenterWindow, screen, m, m, presenterScale, presenterScale)
+    }
+
+    // The presenter is always a normal window covering half the area of its
+    // screen, centered. The audience is fullscreen unless windowed mode is on.
     function placeWindows() {
         var ps = screenAt(session.presenter_screen)
         var aus = screenAt(session.audience_screen)
@@ -136,14 +156,15 @@ QtObject {
                     + ", audience on " + (aus ? aus.name : "?")
                     + (session.windowed ? " (windowed)" : " (fullscreen)"))
         fullScreenTimer.stop()
+        presenterRestoreTimer.stop()
+        showPresenterCentered(ps)
         if (session.windowed) {
-            showWindowed(presenterWindow, ps, 0.02, 0.04, 0.6, 0.7)
-            showWindowed(audienceWindow, aus, 0.64, 0.04, 0.34, 0.34)
+            showWindowed(audienceWindow, aus, 0.6, 0.05, 0.35, 0.35)
         } else {
-            showWindowed(presenterWindow, ps, 0.1, 0.1, 0.8, 0.8)
             showWindowed(audienceWindow, aus, 0.1, 0.1, 0.8, 0.8)
-            fullScreenTimer.start()
         }
+        if (!session.windowed || (wayland && screenCount() > 1))
+            fullScreenTimer.start()
         presenterWindow.raise()
         presenterWindow.requestActivate()
     }
@@ -153,12 +174,34 @@ QtObject {
         // reports that output as the window's screen; restore the target.
         var ps = screenAt(session.presenter_screen)
         var aus = screenAt(session.audience_screen)
-        if (ps)
-            presenterWindow.screen = ps
-        if (aus)
-            audienceWindow.screen = aus
-        presenterWindow.visibility = Window.FullScreen
-        audienceWindow.visibility = Window.FullScreen
+        if (!session.windowed) {
+            if (aus)
+                audienceWindow.screen = aus
+            audienceWindow.visibility = Window.FullScreen
+        }
+        if (wayland && ps && screenCount() > 1) {
+            if (!movePresenterWithKWin(ps)) {
+                presenterWindow.screen = ps
+                presenterWindow.visibility = Window.FullScreen
+                presenterRestoreTimer.start()
+            }
+        }
+        presenterWindow.raise()
+        presenterWindow.requestActivate()
+    }
+
+    function movePresenterWithKWin(screen) {
+        if (!placer.available)
+            return false
+        var w = Math.round(screen.width * presenterScale)
+        var h = Math.round(screen.height * presenterScale)
+        var rect = Qt.rect(screen.virtualX + Math.round((screen.width - w) / 2),
+                           screen.virtualY + Math.round((screen.height - h) / 2), w, h)
+        return placer.setFrameGeometry(presenterWindow.title, rect)
+    }
+
+    function restorePresenter() {
+        showPresenterCentered(screenAt(session.presenter_screen))
         presenterWindow.raise()
         presenterWindow.requestActivate()
     }

@@ -33,10 +33,16 @@ Binary: `rust/target/release/pdfpc`.
 pdfpc [--windowed|-w] presentation.pdf
 ```
 
-- Two monitors: presenter on the primary screen, audience on the secondary (fullscreen).
-- One monitor / CI: automatically falls back to `--windowed` with both windows on screen 0.
-- If nothing appears under KDE/Wayland, try `pdfpc --windowed file.pdf` or `QT_QPA_PLATFORM=xcb pdfpc file.pdf` (XWayland). Watch the console for `pdfpc: screens=…`.
-- `Shift+S` swaps presenter and audience screens at runtime.
+- Two monitors: the presenter view is always a normal window covering half the area of the primary screen (width and height × 1/√2), centered. The audience view is fullscreen on the secondary screen.
+- `Shift+S` swaps the screens: the audience goes fullscreen on the other screen and the presenter is re-centered there with half its area.
+- One monitor: the audience view is a normal window as well, since fullscreen would cover the presenter. When a second screen is connected later, pdfpc switches to the two-screen layout.
+- `--windowed` keeps the audience view in a window too.
+- Closing either window quits pdfpc.
+- Watch the console for `pdfpc: screens=…` / `pdfpc: placing …`.
+
+### Window placement on Wayland
+
+Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin) pdfpc therefore moves the presenter window with a short-lived KWin script loaded over D-Bus (`org.kde.KWin /Scripting`). On other Wayland compositors the presenter is pulled onto its screen with a brief fullscreen request at startup; after `Shift+S` it may stay where the compositor puts it. Under X11 (`QT_QPA_PLATFORM=xcb`) the position is set directly. The fullscreen audience view is assigned to its output via the normal fullscreen request everywhere.
 
 ## Keys
 
