@@ -11,8 +11,10 @@ Window {
     title: "pdfpc — presenter"
     color: "#1a1a1a"
     visible: true
-    width: windowed ? 1280 : (screen ? screen.width : 1280)
-    height: windowed ? 800 : (screen ? screen.height : 800)
+    width: windowed ? 1200 : (screen ? screen.width : 1280)
+    height: windowed ? 480 : (screen ? screen.height : 800)
+    x: 0
+    y: 0
     visibility: windowed ? Window.Windowed : Window.FullScreen
 
     onScreenChanged: {
