@@ -10,16 +10,37 @@ Window {
 
     title: "pdfpc — presenter"
     color: "#1a1a1a"
-    visible: true
-    width: windowed ? 1280 : (screen ? screen.width : 1280)
-    height: windowed ? 800 : (screen ? screen.height : 800)
-    visibility: windowed ? Window.Windowed : Window.FullScreen
-    x: windowed ? 0 : x
-    y: windowed ? 0 : y
+    // Start mapped as a normal window; fullscreen is requested after show on Wayland.
+    visible: false
+    width: windowed ? 1280 : (screen ? Math.max(800, screen.width) : 1280)
+    height: windowed ? 800 : (screen ? Math.max(600, screen.height) : 800)
+    visibility: Window.Windowed
+    x: 0
+    y: 0
+
+    function applyPlacement() {
+        if (root.windowed) {
+            root.visibility = Window.Windowed
+            root.width = 1280
+            root.height = 800
+            root.x = 0
+            root.y = 0
+        } else if (root.screen) {
+            root.visibility = Window.FullScreen
+        }
+        root.visible = true
+        root.raise()
+        root.requestActivate()
+    }
 
     onScreenChanged: {
-        if (!windowed && screen)
-            visibility = Window.FullScreen
+        if (root.visible && !root.windowed && root.screen)
+            root.visibility = Window.FullScreen
+    }
+
+    onWindowedChanged: {
+        if (root.visible)
+            root.applyPlacement()
     }
 
     FocusScope {
