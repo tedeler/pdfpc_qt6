@@ -11,10 +11,11 @@ Window {
     title: "pdfpc — audience"
     color: "#000000"
     visible: true
-    width: windowed ? 960 : (screen ? screen.width : 960)
-    height: windowed ? 540 : (screen ? screen.height : 540)
+    width: windowed ? 640 : (screen ? screen.width : 960)
+    height: windowed ? 480 : (screen ? screen.height : 540)
     visibility: windowed ? Window.Windowed : Window.FullScreen
-    x: windowed ? 1300 : 0
+    // Keep both windowed panes on a typical 1920-wide desktop (presenter is 1280).
+    x: windowed ? 1280 : 0
     y: windowed ? 0 : 0
 
     onScreenChanged: {

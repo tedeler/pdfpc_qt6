@@ -1,0 +1,50 @@
+\documentclass[aspectratio=169]{beamer}
+\usetheme{Madrid}
+\usecolortheme{default}
+\title{Beamer Madrid Rendering Check}
+\author{pdfpc\_qt6}
+\date{}
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Plain text and math}
+  White background, dark text, and a formula:
+  \[
+    E = mc^2 \qquad T_A = 25^\circ\mathrm{C}
+  \]
+  Bullet list:
+  \begin{itemize}
+    \item First item
+    \item Second item with \textbf{bold} and \textit{italic}
+    \item Third item
+  \end{itemize}
+\end{frame}
+
+\begin{frame}{Colors and shapes}
+  \begin{columns}[T]
+    \begin{column}{0.48\textwidth}
+      \begin{block}{Blue block}
+        Block body on colored panel.
+      \end{block}
+      \begin{alertblock}{Alert}
+        Red alert block.
+      \end{alertblock}
+    \end{column}
+    \begin{column}{0.48\textwidth}
+      \begin{exampleblock}{Example}
+        Green example block.
+      \end{exampleblock}
+      Text with \textcolor{red}{red}, \textcolor{blue}{blue},
+      and \textcolor{green!60!black}{green}.
+    \end{column}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Last page}
+  End of Madrid deck. Page should stay readable on both presenter and audience.
+\end{frame}
+
+\end{document}

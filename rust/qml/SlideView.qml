@@ -20,6 +20,26 @@ Item {
         source: root.pdfSource
     }
 
+    // Qt PDF leaves unpainted paper transparent (ARGB). PDFs that rely on the
+    // implicit white page (datasheets, many Distiller exports) would otherwise
+    // show the dark presenter/audience chrome through the slide. Match
+    // QtQuick.Pdf.PdfPageView, which is itself a white Rectangle.
+    readonly property real pageX: pageImage.x + (pageImage.width - pageImage.paintedWidth) / 2
+    readonly property real pageY: pageImage.y + (pageImage.height - pageImage.paintedHeight) / 2
+    readonly property real pageW: Math.max(1, pageImage.paintedWidth)
+    readonly property real pageH: Math.max(1, pageImage.paintedHeight)
+
+    Rectangle {
+        id: paper
+        x: root.pageX
+        y: root.pageY
+        width: root.pageW
+        height: root.pageH
+        color: "#ffffff"
+        visible: pageImage.visible
+        z: 0
+    }
+
     PdfPageImage {
         id: pageImage
         anchors.fill: parent
@@ -28,19 +48,21 @@ Item {
         fillMode: Image.PreserveAspectFit
         asynchronous: true
         visible: root.page >= 0 && localDocument.status === PdfDocument.Ready
+        z: 1
     }
 
     InkCanvas {
         id: ink
-        x: pageImage.x + (pageImage.width - pageImage.paintedWidth) / 2
-        y: pageImage.y + (pageImage.height - pageImage.paintedHeight) / 2
-        width: Math.max(1, pageImage.paintedWidth)
-        height: Math.max(1, pageImage.paintedHeight)
+        x: root.pageX
+        y: root.pageY
+        width: root.pageW
+        height: root.pageH
         strokesJson: root.strokesJson
         pointerVisible: root.pointerVisible
         pointerX: root.pointerX
         pointerY: root.pointerY
         visible: root.page >= 0
+        z: 2
     }
 
     MouseArea {

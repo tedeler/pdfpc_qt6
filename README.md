@@ -62,6 +62,12 @@ Timer starts when you leave page 1. Shown only on the presenter.
 
 `pdfpcrc`, sidecars, notes, overlays, overview, movies, links, transitions, REST, QR, D-Bus, eraser, pen colors, undo, persistent drawings, Windows.
 
+## PDF rendering
+
+Slides are drawn with Qt PDF (`PdfPageImage`) on an opaque white paper rectangle. That matches a normal viewer for PDFs that never paint a page background (common with Distiller datasheets): without the paper layer, dark presenter/audience chrome showed through and looked like a broken invert.
+
+Check against Poppler/Evince using the Beamer decks in `demo/` (see `demo/README.md`).
+
 ## Dual-monitor acceptance (KWin)
 
 1. Open `demo/pdfpc-demo.pdf` on Kubuntu with two displays.

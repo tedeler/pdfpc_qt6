@@ -14,6 +14,8 @@ Window {
     width: windowed ? 1280 : (screen ? screen.width : 1280)
     height: windowed ? 800 : (screen ? screen.height : 800)
     visibility: windowed ? Window.Windowed : Window.FullScreen
+    x: windowed ? 0 : x
+    y: windowed ? 0 : y
 
     onScreenChanged: {
         if (!windowed && screen)
