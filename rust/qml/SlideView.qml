@@ -74,6 +74,7 @@ Item {
         pointerVisible: root.pointerVisible
         pointerX: root.pointerX
         pointerY: root.pointerY
+        pointerSize: root.ctrl.pointer_size
         visible: root.page >= 0
         z: 2
     }
@@ -83,6 +84,8 @@ Item {
         enabled: root.interactive
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: root.interactive && root.ctrl.mode === 1
+        // The laser dot replaces the mouse cursor over the slide.
+        cursorShape: root.ctrl.mode === 1 ? Qt.BlankCursor : Qt.ArrowCursor
 
         function toPage(mx, my) {
             return Qt.point(mx / Math.max(1, ink.width), my / Math.max(1, ink.height))

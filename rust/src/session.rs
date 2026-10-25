@@ -21,6 +21,7 @@ pub mod qobject {
         #[qproperty(f64, pointer_x)]
         #[qproperty(f64, pointer_y)]
         #[qproperty(bool, pointer_visible)]
+        #[qproperty(f64, pointer_size)]
         #[qproperty(QString, current_strokes_json)]
         #[qproperty(QString, audience_strokes_json)]
         #[qproperty(QString, page_label)]
@@ -157,6 +158,12 @@ const KEY_9: i32 = 0x39;
 const KEY_A: i32 = 0x41;
 const KEY_Z: i32 = 0x5a;
 
+/// Laser pointer radius as a fraction of the slide height.
+const POINTER_SIZE_DEFAULT: f64 = 0.022;
+const POINTER_SIZE_MIN: f64 = 0.008;
+const POINTER_SIZE_MAX: f64 = 0.08;
+const POINTER_SIZE_STEP: f64 = 1.25;
+
 const SHIFT_MODIFIER: i32 = 0x0200_0000;
 const CTRL_MODIFIER: i32 = 0x0400_0000;
 
@@ -175,6 +182,7 @@ pub struct SessionRust {
     pointer_x: f64,
     pointer_y: f64,
     pointer_visible: bool,
+    pointer_size: f64,
     current_strokes_json: QString,
     audience_strokes_json: QString,
     page_label: QString,
@@ -208,6 +216,7 @@ impl Default for SessionRust {
             pointer_x: -1.0,
             pointer_y: -1.0,
             pointer_visible: false,
+            pointer_size: POINTER_SIZE_DEFAULT,
             current_strokes_json: QString::from("[]"),
             audience_strokes_json: QString::from("[]"),
             page_label: QString::from("0 / 0"),
@@ -446,6 +455,8 @@ impl qobject::Session {
                         '1' => self.set_mode_internal(MODE_NORMAL),
                         '2' => self.set_mode_internal(MODE_LASER),
                         '3' => self.set_mode_internal(MODE_PEN),
+                        '+' => self.scale_pointer(POINTER_SIZE_STEP),
+                        '-' => self.scale_pointer(1.0 / POINTER_SIZE_STEP),
                         _ => {}
                     }
                 } else if (KEY_0..=KEY_9).contains(&key) {
@@ -521,6 +532,11 @@ impl qobject::Session {
 
     pub fn configure_windowed(self: Pin<&mut Self>, windowed: bool) {
         self.set_windowed(windowed);
+    }
+
+    fn scale_pointer(self: Pin<&mut Self>, factor: f64) {
+        let size = (*self.pointer_size() * factor).clamp(POINTER_SIZE_MIN, POINTER_SIZE_MAX);
+        self.set_pointer_size(size);
     }
 
     fn set_mode_internal(mut self: Pin<&mut Self>, mode: i32) {

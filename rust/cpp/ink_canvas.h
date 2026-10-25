@@ -6,6 +6,7 @@
 #include <QJsonObject>
 #include <QPainter>
 #include <QPen>
+#include <QRadialGradient>
 #include <QtQuick/QQuickPaintedItem>
 #include <QtQml/qqmlregistration.h>
 
@@ -19,6 +20,9 @@ class InkCanvas : public QQuickPaintedItem
     Q_PROPERTY(bool pointerVisible READ pointerVisible WRITE setPointerVisible NOTIFY pointerVisibleChanged)
     Q_PROPERTY(qreal pointerX READ pointerX WRITE setPointerX NOTIFY pointerXChanged)
     Q_PROPERTY(qreal pointerY READ pointerY WRITE setPointerY NOTIFY pointerYChanged)
+    // Pointer radius as a fraction of the page height, so presenter and
+    // audience show the same relative size.
+    Q_PROPERTY(qreal pointerSize READ pointerSize WRITE setPointerSize NOTIFY pointerSizeChanged)
 
 public:
     explicit InkCanvas(QQuickItem *parent = nullptr)
@@ -69,6 +73,16 @@ public:
         update();
     }
 
+    qreal pointerSize() const { return m_pointerSize; }
+    void setPointerSize(qreal size)
+    {
+        if (qFuzzyCompare(m_pointerSize, size))
+            return;
+        m_pointerSize = size;
+        emit pointerSizeChanged();
+        update();
+    }
+
     void paint(QPainter *painter) override
     {
         const qreal w = width();
@@ -92,10 +106,17 @@ public:
 
         if (m_pointerVisible && m_pointerX >= 0.0 && m_pointerY >= 0.0
             && m_pointerX <= 1.0 && m_pointerY <= 1.0) {
+            const QPointF c(m_pointerX * w, m_pointerY * h);
+            const qreal r = qMax<qreal>(3.0, m_pointerSize * h);
+            const qreal glow = r * 2.2;
+            QRadialGradient gradient(c, glow);
+            gradient.setColorAt(0.0, QColor(255, 40, 40, 235));
+            gradient.setColorAt(r / glow * 0.75, QColor(255, 30, 30, 200));
+            gradient.setColorAt(r / glow, QColor(255, 0, 0, 110));
+            gradient.setColorAt(1.0, QColor(255, 0, 0, 0));
             painter->setPen(Qt::NoPen);
-            painter->setBrush(QColor(220, 30, 30));
-            const qreal r = 8.0;
-            painter->drawEllipse(QPointF(m_pointerX * w, m_pointerY * h), r, r);
+            painter->setBrush(gradient);
+            painter->drawEllipse(c, glow, glow);
         }
     }
 
@@ -104,6 +125,7 @@ signals:
     void pointerVisibleChanged();
     void pointerXChanged();
     void pointerYChanged();
+    void pointerSizeChanged();
 
 private:
     void parseStrokes()
@@ -132,4 +154,5 @@ private:
     bool m_pointerVisible = false;
     qreal m_pointerX = -1.0;
     qreal m_pointerY = -1.0;
+    qreal m_pointerSize = 0.022;
 };
