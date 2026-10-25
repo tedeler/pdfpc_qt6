@@ -20,6 +20,12 @@ Item {
         source: root.pdfSource
     }
 
+    readonly property size pointSize: localDocument.status === PdfDocument.Ready
+                                      ? localDocument.pagePointSize(Math.max(0, root.page))
+                                      : Qt.size(4, 3)
+    readonly property real fitScale: Math.min(width / Math.max(1, pointSize.width),
+                                              height / Math.max(1, pointSize.height))
+
     // Qt PDF leaves unpainted paper transparent (ARGB). PDFs that rely on the
     // implicit white page (datasheets, many Distiller exports) would otherwise
     // show the dark presenter/audience chrome through the slide. Match
@@ -46,7 +52,14 @@ Item {
         document: localDocument
         currentFrame: Math.max(0, root.page)
         fillMode: Image.PreserveAspectFit
+        // Without sourceSize Qt PDF rasterizes at the page size in points
+        // (~360 px wide for Beamer), which is blurry when scaled to a screen.
+        // Qt PDF renders exactly to sourceSize, so it must keep the page aspect.
+        sourceSize.width: Math.max(1, Math.round(root.pointSize.width * root.fitScale * Screen.devicePixelRatio))
+        sourceSize.height: Math.max(1, Math.round(root.pointSize.height * root.fitScale * Screen.devicePixelRatio))
         asynchronous: true
+        // Keep showing the previous slide until the next one is rasterized.
+        retainWhileLoading: true
         visible: root.page >= 0 && localDocument.status === PdfDocument.Ready
         z: 1
     }
