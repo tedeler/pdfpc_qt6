@@ -1,0 +1,19 @@
+use cxx_qt_build::{CxxQtBuilder, QmlModule};
+
+fn main() {
+    CxxQtBuilder::new_qml_module(
+        QmlModule::new("org.pdfpc.app")
+            .qml_files([
+                "qml/Main.qml",
+                "qml/Presenter.qml",
+                "qml/Audience.qml",
+                "qml/SlideView.qml",
+            ]),
+    )
+    .qt_module("Network")
+    .qt_module("Quick")
+    .qt_module("Pdf")
+    .files(["src/session.rs"])
+    .cpp_file("cpp/ink_canvas.h")
+    .build();
+}

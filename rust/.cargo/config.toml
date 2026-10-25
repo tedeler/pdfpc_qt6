@@ -1,0 +1,8 @@
+[build]
+rustflags = ["-C", "linker=g++"]
+
+[env]
+QMAKE = "/usr/bin/qmake6"
+QT_VERSION_MAJOR = "6"
+CXX = "g++"
+CC = "gcc"

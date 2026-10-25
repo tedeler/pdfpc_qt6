@@ -1,0 +1,33 @@
+\documentclass[aspectratio=169]{beamer}
+% Explicitly light / white-ish default look
+\setbeamercolor{background canvas}{bg=white}
+\setbeamercolor{normal text}{fg=black}
+\title{White Canvas Beamer}
+\author{pdfpc rendering test}
+\begin{document}
+
+\begin{frame}
+  \titlepage
+\end{frame}
+
+\begin{frame}{Reference slide}
+  This page must appear as black text on a white page in both
+  a system PDF viewer and in pdfpc.
+  \begin{enumerate}
+    \item Line one
+    \item Line two
+    \item Line three
+  \end{enumerate}
+  \[
+    V_{BE} = 0.7\,\mathrm{V} \quad I_C = \beta I_B
+  \]
+\end{frame}
+
+\begin{frame}[plain]
+  \centering
+  \vspace{2cm}
+  {\Huge Plain white frame}\\[1em]
+  No headline chrome — only content on white.
+\end{frame}
+
+\end{document}
