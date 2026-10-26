@@ -77,7 +77,7 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | `b` | Blank audience (black) |
 | `f` | Freeze audience on the current slide + strokes |
 | `1` | Normal mouse |
-| `2` | Laser pointer (left-drag draws a red/white afterglow trail that fades after 2s) |
+| `2` | Laser pointer (left-drag draws a soft red afterglow with white core that fades after 2s) |
 | `+` / `-` | Larger / smaller laser pointer |
 | `3` | Pen (red stroke, fixed width) |
 | `c` | Clear strokes on the current slide |
