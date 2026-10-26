@@ -55,6 +55,11 @@ jobs:
           PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig
         run: scripts/test-laser-trail-continuity.sh
 
+      - name: Window placer command tests
+        env:
+          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig
+        run: scripts/test-window-placer.sh
+
       - name: Smoke (Xvfb)
         working-directory: rust
         env:

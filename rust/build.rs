@@ -3,7 +3,7 @@ use std::path::Path;
 use std::process::Command;
 
 fn main() {
-    CxxQtBuilder::new_qml_module(
+    let mut builder = CxxQtBuilder::new_qml_module(
         QmlModule::new("org.pdfpc.app").qml_files([
             "qml/Main.qml",
             "qml/Presenter.qml",
@@ -13,17 +13,31 @@ fn main() {
     )
     .qt_module("Network")
     .qt_module("Quick")
-    .qt_module("Pdf")
-    .qt_module("DBus")
-    .files(["src/session.rs"])
-    .cpp_file("cpp/ink_canvas.h")
-    .cpp_file("cpp/kwin_placer.h")
-    .build();
+    .qt_module("Pdf");
+
+    // KWin is reached over the session bus. macOS and Windows stay on the
+    // direct placer and do not need Qt DBus.
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.qt_module("DBus");
+    }
+
+    builder
+        .files(["src/session.rs"])
+        .cpp_file("cpp/ink_canvas.h")
+        .cpp_file("cpp/window_placer.h")
+        .build();
 
     println!("cargo:rerun-if-changed=cpp/laser_trail_geom.h");
     println!("cargo:rerun-if-changed=cpp/test_laser_trail_geom.cpp");
+    println!("cargo:rerun-if-changed=cpp/window_placer.h");
+    println!("cargo:rerun-if-changed=cpp/window_placer_proto.h");
+    println!("cargo:rerun-if-changed=cpp/test_window_placer.cpp");
 
     // cxx-qt-lib only links the Qt modules of its own features.
+    // D-Bus is the KWin channel. macOS and Windows use the direct placer and
+    // do not link it.
+    #[cfg(target_os = "linux")]
     println!("cargo:rustc-link-arg=-lQt6DBus");
 
     embed_version_info();

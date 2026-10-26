@@ -54,23 +54,15 @@ QtObject {
         onTriggered: root.placeWindows()
     }
 
-    // KWin assigns a fullscreen surface to the output of its current screen
-    // only once the surface is mapped, so fullscreen is requested in a second
-    // step after the windows were shown (or moved) as normal windows.
+    // A fullscreen request is applied to the output the surface is on only
+    // after that surface is mapped, so it is sent in a second step.
     property Timer fullScreenTimer: Timer {
         interval: 150
         onTriggered: root.enterFullScreen()
     }
 
-    property KWinPlacer placer: KWinPlacer {}
-
-    // Without KWin scripting the presenter is moved to its output by a short
-    // fullscreen request there and then restored to a normal window. KWin
-    // restores the previous geometry though, so this only helps at startup.
-    property Timer presenterRestoreTimer: Timer {
-        interval: 250
-        onTriggered: root.restorePresenter()
-    }
+    property WindowPlacer placer: WindowPlacer {}
+    property int placeAttempts: 0
 
     readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
     readonly property real presenterScale: Math.SQRT1_2
@@ -120,7 +112,8 @@ QtObject {
         }
         console.log("pdfpc: screens=" + n + " windowed=" + windowed
                     + " presenterScreen=" + session.presenter_screen
-                    + " audienceScreen=" + session.audience_screen)
+                    + " audienceScreen=" + session.audience_screen
+                    + " placer=" + placer.mode)
         session.configureWindowed(windowed)
         schedulePlacement()
     }
@@ -148,63 +141,86 @@ QtObject {
         showWindowed(presenterWindow, screen, m, m, presenterScale, presenterScale)
     }
 
-    // The presenter is always a normal window covering half the area of its
-    // screen, centered. The audience is fullscreen unless windowed mode is on.
+    // The presenter is a normal window covering half the area of its screen,
+    // centered, wherever the compositor allows it. Otherwise it is fullscreen
+    // on that screen. The audience is fullscreen unless windowed mode is on.
     function placeWindows() {
         var ps = screenAt(session.presenter_screen)
         var aus = screenAt(session.audience_screen)
         console.log("pdfpc: placing presenter on " + (ps ? ps.name : "?")
                     + ", audience on " + (aus ? aus.name : "?")
-                    + (session.windowed ? " (windowed)" : " (fullscreen)"))
+                    + (session.windowed ? " (windowed)" : " (fullscreen)")
+                    + " via " + placer.mode)
         fullScreenTimer.stop()
-        presenterRestoreTimer.stop()
+        placeAttempts = 0
         showPresenterCentered(ps)
         if (session.windowed) {
             showWindowed(audienceWindow, aus, 0.6, 0.05, 0.35, 0.35)
         } else {
             showWindowed(audienceWindow, aus, 0.1, 0.1, 0.8, 0.8)
         }
-        if (!session.windowed || (wayland && screenCount() > 1))
+        var needAudienceFs = !session.windowed
+        var needPresenter = screenCount() > 1 && (placer.placesWindows || (wayland && !session.windowed))
+        if (needAudienceFs || needPresenter)
             fullScreenTimer.start()
         presenterWindow.raise()
         presenterWindow.requestActivate()
     }
 
     function enterFullScreen() {
-        // KWin maps new normal windows on the active output and Qt then
-        // reports that output as the window's screen; restore the target.
         var ps = screenAt(session.presenter_screen)
         var aus = screenAt(session.audience_screen)
-        if (!session.windowed) {
-            if (aus)
-                audienceWindow.screen = aus
-            audienceWindow.visibility = Window.FullScreen
-        }
-        if (wayland && ps && screenCount() > 1) {
-            if (!movePresenterWithKWin(ps)) {
-                presenterWindow.screen = ps
-                presenterWindow.visibility = Window.FullScreen
-                presenterRestoreTimer.start()
+        if (placeAttempts === 0) {
+            if (!session.windowed) {
+                if (aus && placer.claimsOutputs)
+                    placer.claimOutput(audienceWindow.title, aus.name || "", session.audience_screen)
+                if (aus)
+                    audienceWindow.screen = aus
+                audienceWindow.visibility = Window.FullScreen
+            } else if (aus && placer.placesWindows) {
+                placeBox(audienceWindow, aus, session.audience_screen, 0.6, 0.05, 0.35, 0.35, 0)
             }
         }
+        if (ps && screenCount() > 1 && placer.placesWindows) {
+            if (placeBox(presenterWindow, ps, session.presenter_screen,
+                         (1 - presenterScale) / 2, (1 - presenterScale) / 2,
+                         presenterScale, presenterScale, presenterScale)) {
+                placeAttempts = 0
+            } else if (placeAttempts < 8) {
+                placeAttempts++
+                console.log("pdfpc: place failed, retry " + placeAttempts)
+                fullScreenTimer.start()
+            } else if (!session.windowed) {
+                console.log("pdfpc: place gave up; fullscreen presenter on its output")
+                showPresenterFullScreen(ps)
+                placeAttempts = 0
+            }
+        } else if (!session.windowed && wayland && ps && screenCount() > 1) {
+            showPresenterFullScreen(ps)
+        }
         presenterWindow.raise()
         presenterWindow.requestActivate()
     }
 
-    function movePresenterWithKWin(screen) {
-        if (!placer.available)
+    // rel* are fractions of the output. centeredScale > 0 asks the compositor
+    // to recompute a centered window from its own output size.
+    function placeBox(win, screen, screenIndex, rx, ry, rw, rh, centeredScale) {
+        if (!screen)
             return false
-        var w = Math.round(screen.width * presenterScale)
-        var h = Math.round(screen.height * presenterScale)
-        var rect = Qt.rect(screen.virtualX + Math.round((screen.width - w) / 2),
-                           screen.virtualY + Math.round((screen.height - h) / 2), w, h)
-        return placer.setFrameGeometry(presenterWindow.title, rect)
+        var relX = Math.round(screen.width * rx)
+        var relY = Math.round(screen.height * ry)
+        var relW = Math.round(screen.width * rw)
+        var relH = Math.round(screen.height * rh)
+        var globalX = (screen.virtualX || 0) + relX
+        var globalY = (screen.virtualY || 0) + relY
+        return placer.place(win.title, screen.name || "", screenIndex,
+                            relX, relY, relW, relH, globalX, globalY, centeredScale)
     }
 
-    function restorePresenter() {
-        showPresenterCentered(screenAt(session.presenter_screen))
-        presenterWindow.raise()
-        presenterWindow.requestActivate()
+    function showPresenterFullScreen(screen) {
+        if (screen)
+            presenterWindow.screen = screen
+        presenterWindow.visibility = Window.FullScreen
     }
 
     Component.onCompleted: {

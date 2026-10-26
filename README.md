@@ -1,6 +1,6 @@
 # pdfpc (Rust / Qt 6)
 
-Slim dual-monitor PDF presenter for Linux (KDE/Wayland). Hard-wired keys match the subset of classic pdfpc that this rewrite keeps.
+Slim dual-monitor PDF presenter for Linux (X11 and Wayland, including KDE, GNOME, Sway, and Hyprland). Hard-wired keys match the subset of classic pdfpc that this rewrite keeps.
 
 Current version: see [`VERSION`](VERSION) (also shown under **Help → About pdfpc-qt6**, together with the build-time Git commit id).
 
@@ -62,9 +62,20 @@ pdfpc-qt6 [--windowed|-w] [presentation.pdf]
 - Closing either window quits pdfpc.
 - Watch the console for `pdfpc: screens=…` / `pdfpc: placing …`.
 
-### Window placement on Wayland
+### Window placement
 
-Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin) pdfpc therefore moves the presenter window with a short-lived KWin script loaded over D-Bus (`org.kde.KWin /Scripting`). On other Wayland compositors the presenter is pulled onto its screen with a brief fullscreen request at startup; after `Shift+S` it may stay where the compositor puts it. Under X11 (`QT_QPA_PLATFORM=xcb`) the position is set directly. The fullscreen audience view is assigned to its output via the normal fullscreen request everywhere.
+Wayland does not let a client position a normal window. pdfpc asks the compositor that is actually running, and prints the choice as `pdfpc: placer=…`:
+
+| Session | `placer` | Presenter | Audience |
+|---|---|---|---|
+| X11 (not i3) | `direct` | Qt sets position and size | Fullscreen on its output |
+| KDE Plasma Wayland | `kwin` | One-shot KWin script over D-Bus. This is the only backend that loads a compositor script. The script speaks Plasma 5 (`clientList`, `/<id>`) and Plasma 6 (`windowList`, `/Scripting/Script<id>`). | Fullscreen on its output |
+| Sway, i3 | `sway`, `i3` | i3 IPC: floating window, centered, half the output area | Moved onto that output, then fullscreen |
+| Hyprland | `hyprland` | Hyprland socket: floating window, centered | Moved onto that monitor, then fullscreen |
+| Other Wayland (GNOME, COSMIC, niri, labwc, …) | `output` | Fullscreen on its output. These compositors do not place normal windows for a client. | Fullscreen on its output |
+| macOS, Windows | `direct` | Same Qt geometry path as X11. Those builds do not link the Linux backends and are not covered by Linux CI. | Fullscreen on its screen |
+
+`Shift+S` swaps the two outputs and places again. `--windowed` keeps the audience in a window; on `output` compositors that window stays where the compositor put it.
 
 ## Keys
 
@@ -103,12 +114,12 @@ Slides are drawn with Qt PDF (`PdfPageImage`) on an opaque white paper rectangle
 
 Check against Poppler/Evince using the Beamer decks in `demo/` (see `demo/README.md`).
 
-## Dual-monitor acceptance (KWin)
+## Dual-monitor acceptance
 
-1. Open `demo/pdfpc-demo.pdf` on Kubuntu with two displays.
-2. Confirm presenter (current + next + page + timer) vs audience (current only).
+1. Open `demo/pdfpc-demo.pdf` with two displays.
+2. Confirm presenter (current + next + page + timer) vs audience (current only), and that each is on the screen named in `pdfpc: placing … via <placer>`.
 3. Navigate, `Shift+S`, blank (`b`), freeze (`f`), goto (`g`), laser (`2`), pen (`3`/`c`).
-4. If a window lands on the wrong screen under Wayland, report it — placement uses `Window.screen` + fullscreen; a KWin script can be added as a fallback.
+4. On `direct`, `kwin`, `sway`, `i3`, and `hyprland` the presenter is a centered window of half the output area. On `output` (GNOME and other Wayland compositors) both windows are fullscreen, one per screen.
 
 ## License
 
