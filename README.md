@@ -79,16 +79,16 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | `+` / `-` | Larger / smaller laser pointer |
 | `3` | Pen (red stroke, fixed width) |
 | `c` | Clear strokes on the current slide |
+| `s` | Start timer |
 | `p` | Pause / resume timer |
 | Ctrl+T | Reset timer |
 | Shift+S | Swap presenter and audience screens |
 | `h` | Show / hide the shortcut help (presenter only) |
 | Escape | Close help, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
-| `q` | Quit |
 
-Keys work in both windows. While the help is open only `h`, Escape and `q` act. Unlike classic pdfpc, `h` shows help instead of hiding the presentation.
+Keys work in both windows. While the help is open only `h` and Escape act. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
 
-Timer starts when you leave page 1. Shown only on the presenter.
+Timer starts when you leave page 1, or with `s` (needed again after Ctrl+T reset). Shown only on the presenter.
 
 ## Out of scope
 
