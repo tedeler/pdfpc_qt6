@@ -70,7 +70,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pdfpc_${{ steps.ver.outputs.version }}_amd64
+          name: pdfpc-qt6_${{ steps.ver.outputs.version }}_amd64
           path: dist/*.deb
 
       - name: Create GitHub Release
@@ -78,6 +78,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.ver.outputs.tag }}
-          name: pdfpc ${{ steps.ver.outputs.version }}
+          name: pdfpc-qt6 ${{ steps.ver.outputs.version }}
           generate_release_notes: true
           files: dist/*.deb

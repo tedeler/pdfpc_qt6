@@ -35,7 +35,16 @@ After a release build:
 
 ```bash
 packaging/build-deb.sh
-# → dist/pdfpc_<version>_<arch>.deb
+# → dist/pdfpc-qt6_<version>_<arch>.deb
+```
+
+The package is named **pdfpc-qt6** and still installs `/usr/bin/pdfpc`. It **Conflicts/Replaces** Ubuntu’s classic `pdf-presenter-console` (same binary path). Prefer `apt` so the old package is removed automatically:
+
+```bash
+sudo apt install ./pdfpc-qt6_0.02_amd64.deb
+# or:
+sudo apt remove pdf-presenter-console
+sudo dpkg -i pdfpc-qt6_0.02_amd64.deb
 ```
 
 CI uploads a `.deb` artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v0.02`) additionally publishes a GitHub Release with the same package.

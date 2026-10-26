@@ -68,5 +68,5 @@ jobs:
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pdfpc_${{ github.sha }}_amd64
+          name: pdfpc-qt6_${{ github.sha }}_amd64
           path: dist/*.deb
