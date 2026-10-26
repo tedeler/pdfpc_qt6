@@ -9,6 +9,7 @@ Item {
     property url pdfSource: ""
     property int page: 0
     property string strokesJson: "[]"
+    property string laserTrailsJson: "[]"
     property bool pointerVisible: false
     property real pointerX: -1
     property real pointerY: -1
@@ -116,6 +117,7 @@ Item {
         width: root.pageW
         height: root.pageH
         strokesJson: root.strokesJson
+        laserTrailsJson: root.laserTrailsJson
         pointerVisible: root.pointerVisible
         pointerX: root.pointerX
         pointerY: root.pointerY
@@ -132,8 +134,21 @@ Item {
         // The laser dot replaces the mouse cursor over the slide.
         cursorShape: root.ctrl.mode === 1 ? Qt.BlankCursor : Qt.ArrowCursor
 
+        // Distinguishes a slide-change click from a laser afterglow drag.
+        property real pressX: 0
+        property real pressY: 0
+        property bool laserDragged: false
+        // ~1.2% of the page diagonal as movement threshold.
+        readonly property real clickSlop: 0.012
+
         function toPage(mx, my) {
             return Qt.point(mx / Math.max(1, ink.width), my / Math.max(1, ink.height))
+        }
+
+        function pageDist(ax, ay, bx, by) {
+            var dx = ax - bx
+            var dy = ay - by
+            return Math.sqrt(dx * dx + dy * dy)
         }
 
         onClicked: function (mouse) {
@@ -143,23 +158,53 @@ Item {
 
         onPositionChanged: function (mouse) {
             var p = toPage(mouse.x, mouse.y)
-            if (root.ctrl.mode === 1)
+            if (root.ctrl.mode === 1) {
                 root.ctrl.pointerMove(p.x, p.y)
-            else if (root.ctrl.mode === 2 && (mouse.buttons & Qt.LeftButton))
+                if (mouse.buttons & Qt.LeftButton) {
+                    if (!laserDragged
+                            && pageDist(pressX, pressY, p.x, p.y) >= clickSlop) {
+                        laserDragged = true
+                        root.ctrl.laserTrailBegin(pressX, pressY)
+                        root.ctrl.laserTrailAdd(p.x, p.y)
+                    } else if (laserDragged) {
+                        root.ctrl.laserTrailAdd(p.x, p.y)
+                    }
+                }
+            } else if (root.ctrl.mode === 2 && (mouse.buttons & Qt.LeftButton)) {
                 root.ctrl.strokeAdd(p.x, p.y)
+            }
         }
 
         onPressed: function (mouse) {
             var p = toPage(mouse.x, mouse.y)
-            if (root.ctrl.mode === 2 && mouse.button === Qt.LeftButton)
+            if (root.ctrl.mode === 2 && mouse.button === Qt.LeftButton) {
                 root.ctrl.strokeBegin(p.x, p.y)
-            else if (root.ctrl.mode === 1)
+            } else if (root.ctrl.mode === 1) {
                 root.ctrl.pointerMove(p.x, p.y)
+                if (mouse.button === Qt.LeftButton) {
+                    pressX = p.x
+                    pressY = p.y
+                    laserDragged = false
+                }
+            }
         }
 
         onReleased: function (mouse) {
-            if (root.ctrl.mode === 2)
+            if (root.ctrl.mode === 2) {
                 root.ctrl.strokeEnd()
+                return
+            }
+            if (root.ctrl.mode === 1) {
+                if (mouse.button === Qt.LeftButton) {
+                    if (laserDragged)
+                        root.ctrl.laserTrailEnd()
+                    else
+                        root.ctrl.mouseClick(Qt.LeftButton)
+                    laserDragged = false
+                } else if (mouse.button === Qt.RightButton) {
+                    root.ctrl.mouseClick(Qt.RightButton)
+                }
+            }
         }
 
         onExited: {

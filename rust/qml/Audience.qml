@@ -27,6 +27,7 @@ Window {
         pdfSource: root.ctrl.pdf_url
         page: root.ctrl.audience_page
         strokesJson: root.ctrl.audience_strokes_json
+        laserTrailsJson: (!root.ctrl.blank && !root.ctrl.frozen) ? root.ctrl.laser_trails_json : "[]"
         pointerVisible: root.ctrl.pointer_visible && root.ctrl.mode === 1 && !root.ctrl.blank && !root.ctrl.frozen
         pointerX: root.ctrl.pointer_x
         pointerY: root.ctrl.pointer_y
