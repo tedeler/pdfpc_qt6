@@ -221,12 +221,12 @@ ApplicationWindow {
         ["+  /  -", "Larger / smaller laser pointer"],
         ["3", "Pen"],
         ["c", "Clear drawings on this slide"],
+        ["s", "Start timer"],
         ["p", "Pause / resume timer"],
         ["Ctrl+T", "Reset timer"],
         ["Shift+S", "Swap presenter and audience screens"],
         ["h", "Show / hide this help"],
-        ["Escape", "Close help, cancel go-to, unblank, unfreeze, resume timer, normal mouse"],
-        ["q", "Quit"]
+        ["Escape", "Close help, cancel go-to, unblank, unfreeze, resume timer, normal mouse"]
     ]
 
     Rectangle {

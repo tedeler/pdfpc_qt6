@@ -41,11 +41,11 @@ packaging/build-deb.sh
 Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`):
 
 ```bash
-sudo apt install ./pdfpc-qt6_0.02_amd64.deb
-# or: sudo dpkg -i pdfpc-qt6_0.02_amd64.deb
+sudo apt install ./pdfpc-qt6_0.03_amd64.deb
+# or: sudo dpkg -i pdfpc-qt6_0.03_amd64.deb
 ```
 
-CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v0.02`) additionally publishes a GitHub Release with the same package.
+CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v0.03`) additionally publishes a GitHub Release with the same package.
 
 ## Usage
 
@@ -79,16 +79,16 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | `+` / `-` | Larger / smaller laser pointer |
 | `3` | Pen (red stroke, fixed width) |
 | `c` | Clear strokes on the current slide |
+| `s` | Start timer |
 | `p` | Pause / resume timer |
 | Ctrl+T | Reset timer |
 | Shift+S | Swap presenter and audience screens |
 | `h` | Show / hide the shortcut help (presenter only) |
 | Escape | Close help, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
-| `q` | Quit |
 
-Keys work in both windows. While the help is open only `h`, Escape and `q` act. Unlike classic pdfpc, `h` shows help instead of hiding the presentation.
+Keys work in both windows. While the help is open only `h` and Escape act. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
 
-Timer starts when you leave page 1. Shown only on the presenter.
+Timer starts when you leave page 1, or with `s` (needed again after Ctrl+T reset). Shown only on the presenter.
 
 ## Out of scope
 
