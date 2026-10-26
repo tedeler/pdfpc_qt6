@@ -158,6 +158,7 @@ pub mod qobject {
     }
 }
 
+use crate::laser_trail::{self, DEFAULT_MAX_GAP};
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -346,6 +347,7 @@ impl qobject::Session {
         self.as_mut().set_goto_buffer(QString::default());
         self.as_mut().sync_recent_json();
         self.as_mut().pointer_hide();
+        self.as_mut().sync_laser_trails();
         self.as_mut().refresh_derived();
         self.as_mut().set_pdf_url(url);
     }
@@ -689,17 +691,19 @@ impl qobject::Session {
         if !self.rust().laser_drawing || *self.mode() != MODE_LASER {
             return;
         }
-        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0), Instant::now());
+        let (nx, ny) = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
+        let now = Instant::now();
         if let Some(last) = self.as_mut().rust_mut().laser_trails.last_mut() {
-            // Skip near-duplicates to keep the path light.
-            if let Some(&(lx, ly, _)) = last.last() {
-                let dx = lx - pt.0;
-                let dy = ly - pt.1;
-                if dx * dx + dy * dy < 1.0e-6 {
-                    return;
-                }
+            let mut xy: Vec<(f64, f64)> = last.iter().map(|&(x, y, _)| (x, y)).collect();
+            let before = xy.len();
+            laser_trail::append_densified(&mut xy, (nx, ny), DEFAULT_MAX_GAP, 1.0e-6);
+            if xy.len() == before {
+                return;
             }
-            last.push(pt);
+            // New samples share "now" so a fast jump still fades as one tip burst.
+            for &(x, y) in xy.iter().skip(before) {
+                last.push((x, y, now));
+            }
         }
         self.sync_laser_trails();
     }

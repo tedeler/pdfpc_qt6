@@ -1,5 +1,6 @@
 //! pdfpc — slim dual-monitor PDF presenter.
 
+mod laser_trail;
 mod recent;
 mod session;
 
