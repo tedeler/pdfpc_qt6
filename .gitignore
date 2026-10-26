@@ -1,4 +1,5 @@
 /rust/target/
+/dist/
 **/*.rs.bk
 .idea/
 .vscode/

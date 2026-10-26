@@ -33,6 +33,8 @@ pub mod qobject {
         #[qproperty(i32, audience_screen)]
         #[qproperty(bool, windowed)]
         #[qproperty(bool, help_visible)]
+        #[qproperty(QString, app_version)]
+        #[qproperty(QString, git_id)]
         #[namespace = "pdfpc"]
         type Session = super::SessionRust;
 
@@ -199,6 +201,8 @@ pub struct SessionRust {
     audience_screen: i32,
     windowed: bool,
     help_visible: bool,
+    app_version: QString,
+    git_id: QString,
 
     strokes: HashMap<i32, Vec<Stroke>>,
     drawing: bool,
@@ -234,6 +238,8 @@ impl Default for SessionRust {
             audience_screen: 1,
             windowed: false,
             help_visible: false,
+            app_version: QString::from(env!("PDFPC_VERSION")),
+            git_id: QString::from(env!("PDFPC_GIT_ID")),
             strokes: HashMap::new(),
             drawing: false,
             timer_started: false,

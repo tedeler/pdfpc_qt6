@@ -2,6 +2,8 @@
 
 Slim dual-monitor PDF presenter for Linux (KDE/Wayland). Hard-wired keys match the subset of classic pdfpc that this rewrite keeps.
 
+Current version: see [`VERSION`](VERSION) (also shown under **Help → About pdfpc**, together with the build-time Git commit id).
+
 ## Build
 
 System packages (Ubuntu/Kubuntu):
@@ -26,6 +28,17 @@ cargo build --release
 ```
 
 Binary: `rust/target/release/pdfpc`.
+
+### Debian package
+
+After a release build:
+
+```bash
+packaging/build-deb.sh
+# → dist/pdfpc_<version>_<arch>.deb
+```
+
+GitHub Actions builds the `.deb` and publishes a GitHub Release when a version tag matching `VERSION` is pushed (e.g. `v0.02`).
 
 ## Usage
 
