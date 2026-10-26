@@ -19,10 +19,51 @@ Item {
     PdfDocument {
         id: localDocument
         source: root.pdfSource
+
+        onStatusChanged: function () {
+            if (status === PdfDocument.Ready && pageCount > 0 && root.ctrl)
+                root.ctrl.applyPageCount(pageCount)
+            root.syncFrame()
+        }
+        onPageCountChanged: function () {
+            if (status === PdfDocument.Ready && pageCount > 0 && root.ctrl)
+                root.ctrl.applyPageCount(pageCount)
+            root.syncFrame()
+        }
     }
 
+    // Clamp to the loaded document so a restored page is shown once Ready.
+    readonly property int frameIndex: {
+        if (localDocument.status !== PdfDocument.Ready || localDocument.pageCount <= 0)
+            return 0
+        return Math.max(0, Math.min(root.page, localDocument.pageCount - 1))
+    }
+
+    function syncFrame() {
+        if (localDocument.status !== PdfDocument.Ready || localDocument.pageCount <= 0)
+            return
+        frameNudgeTimer.restart()
+    }
+
+    Timer {
+        id: frameNudgeTimer
+        interval: 50
+        repeat: false
+        onTriggered: {
+            if (localDocument.status !== PdfDocument.Ready || localDocument.pageCount <= 0)
+                return
+            var frame = root.frameIndex
+            // Nudge currentFrame so Qt PDF re-rasterizes after Ready (otherwise a
+            // restored page can stay stuck on the first decoded frame).
+            pageImage.currentFrame = frame === 0 ? 1 : 0
+            pageImage.currentFrame = frame
+        }
+    }
+
+    onPageChanged: syncFrame()
+
     readonly property size pointSize: localDocument.status === PdfDocument.Ready
-                                      ? localDocument.pagePointSize(Math.max(0, root.page))
+                                      ? localDocument.pagePointSize(root.frameIndex)
                                       : Qt.size(4, 3)
     readonly property real fitScale: Math.min(width / Math.max(1, pointSize.width),
                                               height / Math.max(1, pointSize.height))
@@ -51,7 +92,7 @@ Item {
         id: pageImage
         anchors.fill: parent
         document: localDocument
-        currentFrame: Math.max(0, root.page)
+        currentFrame: 0
         fillMode: Image.PreserveAspectFit
         // Without sourceSize Qt PDF rasterizes at the page size in points
         // (~360 px wide for Beamer), which is blurry when scaled to a screen.
@@ -59,10 +100,14 @@ Item {
         sourceSize.width: Math.max(1, Math.round(root.pointSize.width * root.fitScale * Screen.devicePixelRatio))
         sourceSize.height: Math.max(1, Math.round(root.pointSize.height * root.fitScale * Screen.devicePixelRatio))
         asynchronous: true
-        // Keep showing the previous slide until the next one is rasterized.
-        retainWhileLoading: true
         visible: root.page >= 0 && localDocument.status === PdfDocument.Ready
         z: 1
+
+        // retainWhileLoading is Qt 6.5+; set when the property exists.
+        Component.onCompleted: {
+            if ("retainWhileLoading" in pageImage)
+                pageImage.retainWhileLoading = true
+        }
     }
 
     InkCanvas {

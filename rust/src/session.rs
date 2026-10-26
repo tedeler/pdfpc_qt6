@@ -34,6 +34,8 @@ pub mod qobject {
         #[qproperty(i32, audience_screen)]
         #[qproperty(bool, windowed)]
         #[qproperty(bool, help_visible)]
+        #[qproperty(bool, recent_visible)]
+        #[qproperty(QString, recent_files_json)]
         #[qproperty(QString, app_version)]
         #[qproperty(QString, git_id)]
         #[namespace = "pdfpc"]
@@ -42,6 +44,14 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "loadPdf"]
         fn load_pdf(self: Pin<&mut Self>, path: &QString);
+
+        #[qinvokable]
+        #[cxx_name = "showRecent"]
+        fn show_recent(self: Pin<&mut Self>);
+
+        #[qinvokable]
+        #[cxx_name = "hideRecent"]
+        fn hide_recent(self: Pin<&mut Self>);
 
         #[qinvokable]
         #[cxx_name = "applyPageCount"]
@@ -148,11 +158,13 @@ pub mod qobject {
     }
 }
 
+use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QUrl};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 /// Mode: 0 = normal, 1 = laser, 2 = pen.
@@ -172,6 +184,7 @@ const KEY_RIGHT: i32 = 0x0100_0014;
 const KEY_DOWN: i32 = 0x0100_0015;
 const KEY_PAGE_UP: i32 = 0x0100_0016;
 const KEY_PAGE_DOWN: i32 = 0x0100_0017;
+const KEY_F3: i32 = 0x0100_0032;
 const KEY_SPACE: i32 = 0x20;
 const KEY_0: i32 = 0x30;
 const KEY_9: i32 = 0x39;
@@ -220,6 +233,8 @@ pub struct SessionRust {
     audience_screen: i32,
     windowed: bool,
     help_visible: bool,
+    recent_visible: bool,
+    recent_files_json: QString,
     app_version: QString,
     git_id: QString,
 
@@ -231,6 +246,11 @@ pub struct SessionRust {
     timer_paused_flag: bool,
     accumulated: Duration,
     last_tick: Option<Instant>,
+    /// Absolute filesystem path of the open PDF (empty if none).
+    pdf_path: String,
+    /// Page to restore once PdfDocument reports pageCount.
+    pending_page: Option<i32>,
+    recent_entries: Vec<RecentEntry>,
 }
 
 impl Default for SessionRust {
@@ -260,6 +280,8 @@ impl Default for SessionRust {
             audience_screen: 1,
             windowed: false,
             help_visible: false,
+            recent_visible: false,
+            recent_files_json: QString::from("[]"),
             app_version: QString::from(env!("PDFPC_VERSION")),
             git_id: QString::from(env!("PDFPC_GIT_ID")),
             strokes: HashMap::new(),
@@ -270,38 +292,101 @@ impl Default for SessionRust {
             timer_paused_flag: false,
             accumulated: Duration::ZERO,
             last_tick: None,
+            pdf_path: String::new(),
+            pending_page: None,
+            recent_entries: recent::load(),
         }
     }
 }
 
 impl qobject::Session {
     pub fn load_pdf(mut self: Pin<&mut Self>, path: &QString) {
+        self.as_mut().persist_current_page();
+
         let path_str = path.to_string();
-        let url = if path_str.starts_with("file:") {
-            QString::from(&path_str)
-        } else {
-            // Relative paths and characters like '#' or spaces must survive
-            // the conversion to a file URL.
-            let absolute = std::fs::canonicalize(&path_str).unwrap_or_else(|_| {
-                std::env::current_dir()
-                    .map(|dir| dir.join(&path_str))
-                    .unwrap_or_else(|_| path_str.clone().into())
-            });
-            let absolute = QString::from(absolute.to_string_lossy().as_ref());
-            QUrl::from_user_input(&absolute, &QString::default()).to_qstring()
-        };
+        let absolute = resolve_absolute_path(&path_str);
+        let abs_str = absolute.to_string_lossy().into_owned();
+        let url = QUrl::from_user_input(
+            &QString::from(abs_str.as_str()),
+            &QString::default(),
+        )
+        .to_qstring();
+
+        let restore_page = recent::page_for(&self.rust().recent_entries, &abs_str);
+
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.pdf_path = abs_str.clone();
+            rust.pending_page = Some(restore_page);
+            rust.strokes.clear();
+            rust.drawing = false;
+            rust.timer_started = false;
+            rust.timer_paused_flag = false;
+            rust.accumulated = Duration::ZERO;
+            rust.last_tick = None;
+            recent::touch(&mut rust.recent_entries, &abs_str, restore_page);
+            recent::save(&rust.recent_entries);
+        }
+
+        // Reset UI state before setting pdf_url: changing the URL can load the
+        // document re-entrantly (apply_page_count) before this function returns.
+        self.as_mut().set_page_count(0);
+        self.as_mut().set_current_page(restore_page);
+        self.as_mut().set_blank(false);
+        self.as_mut().set_frozen(false);
+        self.as_mut().set_mode(MODE_NORMAL);
+        self.as_mut().set_timer_paused(false);
+        self.as_mut().set_timer_text(QString::from("00:00:00"));
+        self.as_mut().set_help_visible(false);
+        self.as_mut().set_recent_visible(false);
+        self.as_mut().set_goto_active(false);
+        self.as_mut().set_goto_buffer(QString::default());
+        self.as_mut().sync_recent_json();
+        self.as_mut().pointer_hide();
+        self.as_mut().refresh_derived();
         self.as_mut().set_pdf_url(url);
-        self.as_mut().set_current_page(0);
-        self.refresh_derived();
+    }
+
+    pub fn show_recent(mut self: Pin<&mut Self>) {
+        self.as_mut().persist_current_page();
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.recent_entries = recent::load();
+        }
+        self.as_mut().sync_recent_json();
+        self.as_mut().set_help_visible(false);
+        self.set_recent_visible(true);
+    }
+
+    pub fn hide_recent(self: Pin<&mut Self>) {
+        // ESC continues the current PDF; without one the dialog stays open.
+        if !self.rust().pdf_path.is_empty() {
+            self.set_recent_visible(false);
+        }
     }
 
     pub fn apply_page_count(mut self: Pin<&mut Self>, count: i32) {
-        self.as_mut().set_page_count(count.max(0));
-        let page_count = *self.page_count();
-        let current = *self.current_page();
-        if page_count > 0 && current >= page_count {
-            self.as_mut().set_current_page(page_count - 1);
+        let page_count = count.max(0);
+        // Ignore transient 0 from a document that is still loading / empty so
+        // we neither wipe a good count nor consume pending_page early.
+        if page_count <= 0 {
+            return;
         }
+        self.as_mut().set_page_count(page_count);
+        let pending = {
+            let mut rust = self.as_mut().rust_mut();
+            rust.pending_page.take()
+        };
+        if let Some(page) = pending {
+            self.as_mut()
+                .set_current_page(page.clamp(0, page_count - 1));
+        } else {
+            let current = *self.current_page();
+            if current >= page_count {
+                self.as_mut().set_current_page(page_count - 1);
+            }
+        }
+        self.as_mut().persist_current_page();
         self.refresh_derived();
     }
 
@@ -476,16 +561,29 @@ impl qobject::Session {
         self.set_audience_screen(p);
     }
 
-    pub fn handle_key(self: Pin<&mut Self>, key: i32, modifiers: i32, text: &QString) {
+    pub fn handle_key(mut self: Pin<&mut Self>, key: i32, modifiers: i32, text: &QString) {
         let shift = modifiers & SHIFT_MODIFIER != 0;
         let ctrl = modifiers & CTRL_MODIFIER != 0;
         let text_str = text.to_string();
         let ch = text_str.chars().next();
 
-        // While the help is shown only h / Escape do anything.
+        // Recent-files dialog: Escape continues the open PDF.
+        if *self.recent_visible() {
+            match key {
+                KEY_ESCAPE | KEY_F3 => self.hide_recent(),
+                _ => {}
+            }
+            return;
+        }
+
+        // While the help is shown only h / Escape / F3 do anything.
         if *self.help_visible() {
             match (key, ch) {
                 (KEY_ESCAPE, _) | (_, Some('h' | 'H')) => self.set_help_visible(false),
+                (KEY_F3, _) => {
+                    self.as_mut().set_help_visible(false);
+                    self.show_recent();
+                }
                 _ => {}
             }
             return;
@@ -503,6 +601,11 @@ impl qobject::Session {
 
         if shift && key_letter(key) == Some('s') {
             self.swap_screens();
+            return;
+        }
+
+        if key == KEY_F3 {
+            self.show_recent();
             return;
         }
 
@@ -638,7 +741,10 @@ impl qobject::Session {
 
     pub fn mouse_click(self: Pin<&mut Self>, button: i32) {
         let mode = *self.mode();
-        if *self.help_visible() || (mode != MODE_NORMAL && mode != MODE_LASER) {
+        if *self.help_visible()
+            || *self.recent_visible()
+            || (mode != MODE_NORMAL && mode != MODE_LASER)
+        {
             return;
         }
         match button {
@@ -763,7 +869,26 @@ impl qobject::Session {
             "0 / 0".to_string()
         };
         self.as_mut().set_page_label(QString::from(&label));
+        self.as_mut().persist_current_page();
         self.sync_stroke_props();
+    }
+
+    fn persist_current_page(mut self: Pin<&mut Self>) {
+        let path = self.rust().pdf_path.clone();
+        if path.is_empty() {
+            return;
+        }
+        let page = *self.current_page();
+        {
+            let mut rust = self.as_mut().rust_mut();
+            recent::set_page(&mut rust.recent_entries, &path, page);
+            recent::save(&rust.recent_entries);
+        }
+    }
+
+    fn sync_recent_json(self: Pin<&mut Self>) {
+        let json = recent::to_json(&self.rust().recent_entries);
+        self.set_recent_files_json(QString::from(&json));
     }
 
     fn sync_stroke_props(mut self: Pin<&mut Self>) {
@@ -856,5 +981,70 @@ fn key_letter(key: i32) -> Option<char> {
         Some(char::from_u32((key - KEY_A) as u32 + u32::from(b'a')).unwrap())
     } else {
         None
+    }
+}
+
+/// Resolve a filesystem path or `file:` URL to an absolute path.
+fn resolve_absolute_path(path_str: &str) -> PathBuf {
+    let candidate = if path_str.starts_with("file:") {
+        file_url_to_path(path_str)
+    } else {
+        PathBuf::from(path_str)
+    };
+    std::fs::canonicalize(&candidate).unwrap_or_else(|_| {
+        if candidate.is_absolute() {
+            candidate
+        } else {
+            std::env::current_dir()
+                .map(|dir| dir.join(&candidate))
+                .unwrap_or(candidate)
+        }
+    })
+}
+
+fn file_url_to_path(url: &str) -> PathBuf {
+    let rest = url.strip_prefix("file:").unwrap_or(url);
+    let path_part = if let Some(stripped) = rest.strip_prefix("///") {
+        format!("/{stripped}")
+    } else if let Some(stripped) = rest.strip_prefix("//localhost") {
+        stripped.to_string()
+    } else if rest.starts_with("//") {
+        // file://host/path — drop the host component.
+        match rest[2..].find('/') {
+            Some(idx) => rest[2 + idx..].to_string(),
+            None => rest.to_string(),
+        }
+    } else {
+        rest.to_string()
+    };
+    PathBuf::from(percent_decode(&path_part))
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let h = hex_nibble(bytes[i + 1]);
+            let l = hex_nibble(bytes[i + 2]);
+            if let (Some(h), Some(l)) = (h, l) {
+                out.push((h << 4) | l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn hex_nibble(b: u8) -> Option<u8> {
+    match b {
+        b'0'..=b'9' => Some(b - b'0'),
+        b'a'..=b'f' => Some(b - b'a' + 10),
+        b'A'..=b'F' => Some(b - b'A' + 10),
+        _ => None,
     }
 }
