@@ -2,6 +2,8 @@
 
 Slim dual-monitor PDF presenter for Linux (KDE/Wayland). Hard-wired keys match the subset of classic pdfpc that this rewrite keeps.
 
+Current version: see [`VERSION`](VERSION) (also shown under **Help → About pdfpc-qt6**, together with the build-time Git commit id).
+
 ## Build
 
 System packages (Ubuntu/Kubuntu):
@@ -25,12 +27,30 @@ export QMAKE=/usr/bin/qmake6 QT_VERSION_MAJOR=6 CXX=g++
 cargo build --release
 ```
 
-Binary: `rust/target/release/pdfpc`.
+Binary: `rust/target/release/pdfpc-qt6`.
+
+### Debian package
+
+After a release build:
+
+```bash
+packaging/build-deb.sh
+# → dist/pdfpc-qt6_<version>_<arch>.deb
+```
+
+Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`):
+
+```bash
+sudo apt install ./pdfpc-qt6_0.02_amd64.deb
+# or: sudo dpkg -i pdfpc-qt6_0.02_amd64.deb
+```
+
+CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v0.02`) additionally publishes a GitHub Release with the same package.
 
 ## Usage
 
 ```bash
-pdfpc [--windowed|-w] presentation.pdf
+pdfpc-qt6 [--windowed|-w] presentation.pdf
 ```
 
 - Two monitors: the presenter view is always a normal window covering half the area of the primary screen (width and height × 1/√2), centered. The audience view is fullscreen on the secondary screen.

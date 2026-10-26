@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Create release for this version tag (e.g. v0.02). Leave empty to only build the .deb artifact."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  deb:
+    # Match Kubuntu/Ubuntu 26.04 package names in dpkg-shlibdeps output.
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show runner OS
+        run: |
+          . /etc/os-release
+          echo "PRETTY_NAME=$PRETTY_NAME"
+          echo "VERSION_ID=$VERSION_ID"
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
+            TAG="${GITHUB_REF_NAME}"
+          elif [[ -n "${{ inputs.tag }}" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="v$(tr -d '[:space:]' < VERSION)"
+          fi
+          VERSION="${TAG#v}"
+          FILE_VERSION="$(tr -d '[:space:]' < VERSION)"
+          if [[ "$VERSION" != "$FILE_VERSION" ]]; then
+            echo "Tag/version $VERSION does not match VERSION file ($FILE_VERSION)" >&2
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install Qt 6 and packaging tools
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential g++ qmake6 fakeroot dpkg-dev \
+            qt6-base-dev qt6-declarative-dev qt6-pdf-dev qt6-tools-dev \
+            libqt6pdf6 libqt6pdfquick6 \
+            qml6-module-qtquick qml6-module-qtquick-controls \
+            qml6-module-qtquick-layouts qml6-module-qtquick-window \
+            qml6-module-qtquick-pdf qml6-module-qtqml \
+            qml6-module-qtqml-workerscript
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@1.88.0
+
+      - name: Build
+        working-directory: rust
+        env:
+          QMAKE: /usr/bin/qmake6
+          QT_VERSION_MAJOR: "6"
+          CXX: g++
+          CC: gcc
+          RUSTFLAGS: "-C linker=g++"
+        run: cargo build --release
+
+      - name: Package .deb
+        run: packaging/build-deb.sh dist
+
+      - name: Show .deb Depends
+        run: |
+          deb="$(ls dist/pdfpc-qt6_*.deb)"
+          echo "DEB=$deb"
+          echo -n "Depends: "
+          dpkg-deb -f "$deb" Depends
+          deps="$(dpkg-deb -f "$deb" Depends)"
+          if echo "$deps" | grep -E 'libqt6(gui|dbus)6t64'; then
+            echo "error: Depends still contain 24.04-only Qt t64 names: $deps" >&2
+            exit 1
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdfpc-qt6_${{ steps.ver.outputs.version }}_amd64
+          path: dist/*.deb
+
+      - name: Create GitHub Release
+        if: github.ref_type == 'tag' || inputs.tag != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: pdfpc-qt6 ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          files: dist/*.deb

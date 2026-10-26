@@ -214,7 +214,7 @@ QtObject {
             if (args[i] === "--windowed" || args[i] === "-w")
                 userWindowed = true
             else if (args[i] === "--help" || args[i] === "-h") {
-                console.log("Usage: pdfpc [--windowed] <file.pdf>")
+                console.log("Usage: pdfpc-qt6 [--windowed] <file.pdf>")
                 Qt.quit()
                 return
             } else if (!args[i].startsWith("-") && pdfPath === "") {
@@ -223,7 +223,7 @@ QtObject {
         }
 
         if (pdfPath === "") {
-            console.log("Usage: pdfpc [--windowed] <file.pdf>")
+            console.log("Usage: pdfpc-qt6 [--windowed] <file.pdf>")
             Qt.quit()
             return
         }

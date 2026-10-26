@@ -1,14 +1,56 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Window
 import QtQuick.Pdf
 import org.pdfpc.app
 
-Window {
+ApplicationWindow {
     id: root
     required property var ctrl
 
-    title: "pdfpc — presenter"
+    title: "pdfpc-qt6 — presenter"
     color: "#1a1a1a"
+
+    menuBar: MenuBar {
+        Menu {
+            title: qsTr("&Help")
+            Action {
+                text: qsTr("&About pdfpc-qt6")
+                onTriggered: aboutDialog.open()
+            }
+        }
+    }
+
+    Dialog {
+        id: aboutDialog
+        title: qsTr("About pdfpc-qt6")
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        standardButtons: Dialog.Ok
+        onClosed: focusScope.forceActiveFocus()
+
+        contentItem: Column {
+            spacing: 10
+            padding: 4
+
+            Label {
+                text: "pdfpc-qt6"
+                font.pixelSize: 20
+                font.bold: true
+            }
+            Label {
+                text: qsTr("Version %1").arg(root.ctrl.app_version)
+            }
+            Label {
+                text: qsTr("Git %1").arg(root.ctrl.git_id)
+                font.family: "DejaVu Sans Mono"
+            }
+            Label {
+                text: "GPL-3.0-or-later"
+                color: palette.placeholderText
+            }
+        }
+    }
 
     FocusScope {
         id: focusScope

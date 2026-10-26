@@ -7,15 +7,23 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # Target Kubuntu/Ubuntu 26.04: shlib Depends must use that release's
+    # library package names (no Ubuntu 24.04 t64 names for Qt libs).
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Show runner OS
+        run: |
+          . /etc/os-release
+          echo "PRETTY_NAME=$PRETTY_NAME"
+          echo "VERSION_ID=$VERSION_ID"
 
       - name: Install Qt 6 and build tools
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-            build-essential g++ qmake6 \
+            build-essential g++ qmake6 fakeroot dpkg-dev \
             qt6-base-dev qt6-declarative-dev qt6-pdf-dev qt6-tools-dev \
             libqt6pdf6 libqt6pdfquick6 \
             qml6-module-qtquick qml6-module-qtquick-controls \
@@ -50,14 +58,37 @@ jobs:
           chmod 700 "$XDG_RUNTIME_DIR"
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 1
-          # pdfpc is a long-running GUI; a clean timeout (124) means it stayed up.
+          # pdfpc-qt6 is a long-running GUI; a clean timeout (124) means it stayed up.
           set +e
-          timeout 8 ./target/release/pdfpc --windowed ../demo/pdfpc-demo.pdf
+          timeout 8 ./target/release/pdfpc-qt6 --windowed ../demo/pdfpc-demo.pdf
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
-            echo "Smoke OK: pdfpc still running when timeout fired"
+            echo "Smoke OK: pdfpc-qt6 still running when timeout fired"
             exit 0
           fi
-          echo "Smoke failed: pdfpc exited with status $status before timeout"
+          echo "Smoke failed: pdfpc-qt6 exited with status $status before timeout"
           exit "$status"
+
+      - name: Package .deb
+        run: packaging/build-deb.sh dist
+
+      - name: Show .deb Depends
+        run: |
+          deb="$(ls dist/pdfpc-qt6_*.deb)"
+          echo "DEB=$deb"
+          echo -n "Depends: "
+          dpkg-deb -f "$deb" Depends
+          # Fail the job if Ubuntu 24.04-style Qt t64 deps leaked in (except
+          # packages that still use the t64 name on 26.04, e.g. libqt6core6t64).
+          deps="$(dpkg-deb -f "$deb" Depends)"
+          if echo "$deps" | grep -E 'libqt6(gui|dbus)6t64'; then
+            echo "error: Depends still contain 24.04-only Qt t64 names: $deps" >&2
+            exit 1
+          fi
+
+      - name: Upload .deb artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdfpc-qt6_${{ github.sha }}_amd64
+          path: dist/*.deb
