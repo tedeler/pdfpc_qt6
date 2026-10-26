@@ -7,7 +7,7 @@ Window {
     id: root
     required property var ctrl
 
-    title: "pdfpc — audience"
+    title: "pdfpc-qt6 — audience"
     color: "#000000"
 
     Item {

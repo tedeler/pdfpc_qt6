@@ -8,7 +8,7 @@ description = "Slim dual-monitor PDF presenter (Qt 6 / QML)"
 authors = ["pdfpc_qt6 contributors"]
 
 [[bin]]
-name = "pdfpc"
+name = "pdfpc-qt6"
 path = "src/main.rs"
 
 [dependencies]

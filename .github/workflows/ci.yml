@@ -50,16 +50,16 @@ jobs:
           chmod 700 "$XDG_RUNTIME_DIR"
           Xvfb :99 -screen 0 1280x800x24 &
           sleep 1
-          # pdfpc is a long-running GUI; a clean timeout (124) means it stayed up.
+          # pdfpc-qt6 is a long-running GUI; a clean timeout (124) means it stayed up.
           set +e
-          timeout 8 ./target/release/pdfpc --windowed ../demo/pdfpc-demo.pdf
+          timeout 8 ./target/release/pdfpc-qt6 --windowed ../demo/pdfpc-demo.pdf
           status=$?
           set -e
           if [ "$status" -eq 124 ]; then
-            echo "Smoke OK: pdfpc still running when timeout fired"
+            echo "Smoke OK: pdfpc-qt6 still running when timeout fired"
             exit 0
           fi
-          echo "Smoke failed: pdfpc exited with status $status before timeout"
+          echo "Smoke failed: pdfpc-qt6 exited with status $status before timeout"
           exit "$status"
 
       - name: Package .deb

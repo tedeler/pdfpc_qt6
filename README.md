@@ -2,7 +2,7 @@
 
 Slim dual-monitor PDF presenter for Linux (KDE/Wayland). Hard-wired keys match the subset of classic pdfpc that this rewrite keeps.
 
-Current version: see [`VERSION`](VERSION) (also shown under **Help → About pdfpc**, together with the build-time Git commit id).
+Current version: see [`VERSION`](VERSION) (also shown under **Help → About pdfpc-qt6**, together with the build-time Git commit id).
 
 ## Build
 
@@ -27,7 +27,7 @@ export QMAKE=/usr/bin/qmake6 QT_VERSION_MAJOR=6 CXX=g++
 cargo build --release
 ```
 
-Binary: `rust/target/release/pdfpc`.
+Binary: `rust/target/release/pdfpc-qt6`.
 
 ### Debian package
 
@@ -38,13 +38,11 @@ packaging/build-deb.sh
 # → dist/pdfpc-qt6_<version>_<arch>.deb
 ```
 
-The package is named **pdfpc-qt6** and still installs `/usr/bin/pdfpc`. It **Conflicts/Replaces** Ubuntu’s classic `pdf-presenter-console` (same binary path). Prefer `apt` so the old package is removed automatically:
+Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`):
 
 ```bash
 sudo apt install ./pdfpc-qt6_0.02_amd64.deb
-# or:
-sudo apt remove pdf-presenter-console
-sudo dpkg -i pdfpc-qt6_0.02_amd64.deb
+# or: sudo dpkg -i pdfpc-qt6_0.02_amd64.deb
 ```
 
 CI uploads a `.deb` artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v0.02`) additionally publishes a GitHub Release with the same package.
@@ -52,7 +50,7 @@ CI uploads a `.deb` artifact on every push/PR. Pushing a version tag that matche
 ## Usage
 
 ```bash
-pdfpc [--windowed|-w] presentation.pdf
+pdfpc-qt6 [--windowed|-w] presentation.pdf
 ```
 
 - Two monitors: the presenter view is always a normal window covering half the area of the primary screen (width and height × 1/√2), centered. The audience view is fullscreen on the secondary screen.

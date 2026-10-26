@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Build an amd64/arm64 .deb from rust/target/release/pdfpc.
-# Package name is pdfpc-qt6 so it can replace Ubuntu's pdf-presenter-console
-# (classic pdfpc), which also ships /usr/bin/pdfpc.
+# Build an amd64/arm64 .deb from rust/target/release/pdfpc-qt6.
+# Package and binary are both pdfpc-qt6 so they coexist with classic pdfpc
+# (Ubuntu package pdf-presenter-console → /usr/bin/pdfpc).
 # Usage: packaging/build-deb.sh [output-dir]
 set -euo pipefail
 
@@ -10,7 +10,8 @@ OUT_DIR="${1:-"$ROOT/dist"}"
 VERSION="$(tr -d '[:space:]' < "$ROOT/VERSION")"
 ARCH="$(dpkg --print-architecture)"
 PKG_NAME="pdfpc-qt6"
-BIN="$ROOT/rust/target/release/pdfpc"
+BIN_NAME="pdfpc-qt6"
+BIN="$ROOT/rust/target/release/$BIN_NAME"
 
 if [[ ! -x "$BIN" ]]; then
   echo "error: missing release binary at $BIN (run cargo build --release first)" >&2
@@ -21,8 +22,8 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 mkdir -p "$STAGE/usr/bin" "$STAGE/usr/share/doc/$PKG_NAME" "$STAGE/DEBIAN"
-install -m 755 "$BIN" "$STAGE/usr/bin/pdfpc"
-strip --strip-unneeded "$STAGE/usr/bin/pdfpc" 2>/dev/null || true
+install -m 755 "$BIN" "$STAGE/usr/bin/$BIN_NAME"
+strip --strip-unneeded "$STAGE/usr/bin/$BIN_NAME" 2>/dev/null || true
 
 cp "$ROOT/LICENSE" "$STAGE/usr/share/doc/$PKG_NAME/copyright"
 cat > "$STAGE/usr/share/doc/$PKG_NAME/changelog.Debian" <<EOF
@@ -40,7 +41,7 @@ mkdir -p "$STAGE/debian"
 touch "$STAGE/debian/control"
 (
   cd "$STAGE"
-  dpkg-shlibdeps -TDEBIAN/substvars -e usr/bin/pdfpc
+  dpkg-shlibdeps -TDEBIAN/substvars -e "usr/bin/$BIN_NAME"
 )
 SHLIBS="$(sed -n 's/^shlibs:Depends=//p' "$STAGE/DEBIAN/substvars")"
 # Qt PDF is loaded via QML plugins (not in NEEDED); keep those packages explicit.
@@ -57,14 +58,10 @@ Maintainer: pdfpc_qt6 contributors <pdfpc@localhost>
 Section: utils
 Priority: optional
 Depends: ${DEPENDS}
-Conflicts: pdf-presenter-console, pdfpc
-Replaces: pdf-presenter-console, pdfpc
-Provides: pdf-presenter-console
 Homepage: https://github.com/tedeler/pdfpc_qt6
 Description: Slim dual-monitor PDF presenter (Qt 6)
  pdfpc-qt6 is a slim dual-monitor PDF presenter for Linux (Qt 6 rewrite).
- It provides the pdfpc command and replaces the classic pdf-presenter-console
- package when both would install /usr/bin/pdfpc.
+ Command: ${BIN_NAME}. Coexists with classic pdfpc (pdf-presenter-console).
  Built from git ${GIT_ID}.
 EOF
 
