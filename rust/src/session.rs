@@ -126,11 +126,11 @@ pub mod qobject {
 
         #[qinvokable]
         #[cxx_name = "laserTrailBegin"]
-        fn laser_trail_begin(self: Pin<&mut Self>, x: f64, y: f64);
+        fn laser_trail_begin(self: Pin<&mut Self>, x: f64, y: f64, straight: bool);
 
         #[qinvokable]
         #[cxx_name = "laserTrailAdd"]
-        fn laser_trail_add(self: Pin<&mut Self>, x: f64, y: f64);
+        fn laser_trail_add(self: Pin<&mut Self>, x: f64, y: f64, straight: bool);
 
         #[qinvokable]
         #[cxx_name = "laserTrailEnd"]
@@ -208,10 +208,13 @@ const CTRL_MODIFIER: i32 = 0x0400_0000;
 type Point = (f64, f64);
 type Stroke = Vec<Point>;
 
-/// One mouse-drag polyline; fades as a whole after `touched`.
+/// One mouse-drag polyline (or straight segment). Fade starts only on release.
 struct LaserStroke {
     points: Vec<Point>,
-    touched: Instant,
+    start: Point,
+    straight: bool,
+    /// `None` while the button is held; set in `laser_trail_end`.
+    fade_started: Option<Instant>,
 }
 
 pub struct SessionRust {
@@ -678,7 +681,7 @@ impl qobject::Session {
         self.set_pointer_y(-1.0);
     }
 
-    pub fn laser_trail_begin(mut self: Pin<&mut Self>, x: f64, y: f64) {
+    pub fn laser_trail_begin(mut self: Pin<&mut Self>, x: f64, y: f64, straight: bool) {
         if *self.mode() != MODE_LASER {
             return;
         }
@@ -687,22 +690,27 @@ impl qobject::Session {
             let mut rust = self.as_mut().rust_mut();
             rust.laser_trails.push(LaserStroke {
                 points: vec![pt],
-                touched: Instant::now(),
+                start: pt,
+                straight,
+                fade_started: None,
             });
             rust.laser_drawing = true;
         }
         self.sync_laser_trails();
     }
 
-    pub fn laser_trail_add(mut self: Pin<&mut Self>, x: f64, y: f64) {
+    pub fn laser_trail_add(mut self: Pin<&mut Self>, x: f64, y: f64, straight: bool) {
         if !self.rust().laser_drawing || *self.mode() != MODE_LASER {
             return;
         }
         let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
         let mut changed = false;
         if let Some(last) = self.as_mut().rust_mut().laser_trails.last_mut() {
-            if laser_trail::append_vertex(&mut last.points, pt, MIN_POINT_GAP) {
-                last.touched = Instant::now();
+            last.straight = straight;
+            if straight {
+                laser_trail::set_straight_segment(&mut last.points, last.start, pt);
+                changed = true;
+            } else if laser_trail::append_vertex(&mut last.points, pt, MIN_POINT_GAP) {
                 changed = true;
             }
         }
@@ -712,7 +720,15 @@ impl qobject::Session {
     }
 
     pub fn laser_trail_end(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().laser_drawing = false;
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.laser_drawing = false;
+            if let Some(last) = rust.laser_trails.last_mut() {
+                if last.fade_started.is_none() {
+                    last.fade_started = Some(Instant::now());
+                }
+            }
+        }
         self.sync_laser_trails();
     }
 
@@ -924,8 +940,10 @@ impl qobject::Session {
         let now = Instant::now();
         {
             let mut rust = self.as_mut().rust_mut();
-            rust.laser_trails
-                .retain(|stroke| now.duration_since(stroke.touched) < LASER_TRAIL_TTL);
+            rust.laser_trails.retain(|stroke| {
+                laser_trail::stroke_alpha(stroke.fade_started, now, LASER_TRAIL_TTL.as_secs_f64())
+                    .is_some()
+            });
         }
         let json = laser_trails_to_json(&self.rust().laser_trails, now);
         self.set_laser_trails_json(QString::from(&json));
@@ -968,11 +986,9 @@ fn laser_trails_to_json(trails: &[LaserStroke], now: Instant) -> String {
         if stroke.points.len() < 2 {
             continue;
         }
-        let age = now.duration_since(stroke.touched).as_secs_f64();
-        if age >= ttl {
+        let Some(a) = laser_trail::stroke_alpha(stroke.fade_started, now, ttl) else {
             continue;
-        }
-        let a = 1.0 - (age / ttl);
+        };
         let pts: Vec<Value> = stroke
             .points
             .iter()
