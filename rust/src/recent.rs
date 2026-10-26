@@ -124,9 +124,16 @@ pub fn set_page(entries: &mut Vec<RecentEntry>, path: &str, page: i32) {
 }
 
 pub fn page_for(entries: &[RecentEntry], path: &str) -> i32 {
+    if let Some(entry) = entries.iter().find(|e| e.path == path) {
+        return entry.page.max(0);
+    }
+    // Paths may differ by symlink / relative form in older recent.json entries.
+    let Ok(canon) = std::fs::canonicalize(path) else {
+        return 0;
+    };
     entries
         .iter()
-        .find(|e| e.path == path)
+        .find(|e| std::fs::canonicalize(&e.path).ok().as_ref() == Some(&canon))
         .map(|e| e.page.max(0))
         .unwrap_or(0)
 }
