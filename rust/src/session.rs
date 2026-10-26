@@ -158,7 +158,7 @@ pub mod qobject {
     }
 }
 
-use crate::laser_trail::{self, DEFAULT_MAX_GAP};
+use crate::laser_trail::{self, MIN_POINT_GAP};
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -207,8 +207,12 @@ const CTRL_MODIFIER: i32 = 0x0400_0000;
 
 type Point = (f64, f64);
 type Stroke = Vec<Point>;
-type TimedPoint = (f64, f64, Instant);
-type TimedStroke = Vec<TimedPoint>;
+
+/// One mouse-drag polyline; fades as a whole after `touched`.
+struct LaserStroke {
+    points: Vec<Point>,
+    touched: Instant,
+}
 
 pub struct SessionRust {
     pdf_url: QString,
@@ -242,7 +246,7 @@ pub struct SessionRust {
 
     strokes: HashMap<i32, Vec<Stroke>>,
     drawing: bool,
-    laser_trails: Vec<TimedStroke>,
+    laser_trails: Vec<LaserStroke>,
     laser_drawing: bool,
     timer_started: bool,
     timer_paused_flag: bool,
@@ -678,10 +682,13 @@ impl qobject::Session {
         if *self.mode() != MODE_LASER {
             return;
         }
-        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0), Instant::now());
+        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
         {
             let mut rust = self.as_mut().rust_mut();
-            rust.laser_trails.push(vec![pt]);
+            rust.laser_trails.push(LaserStroke {
+                points: vec![pt],
+                touched: Instant::now(),
+            });
             rust.laser_drawing = true;
         }
         self.sync_laser_trails();
@@ -691,21 +698,17 @@ impl qobject::Session {
         if !self.rust().laser_drawing || *self.mode() != MODE_LASER {
             return;
         }
-        let (nx, ny) = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
-        let now = Instant::now();
+        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
+        let mut changed = false;
         if let Some(last) = self.as_mut().rust_mut().laser_trails.last_mut() {
-            let mut xy: Vec<(f64, f64)> = last.iter().map(|&(x, y, _)| (x, y)).collect();
-            let before = xy.len();
-            laser_trail::append_densified(&mut xy, (nx, ny), DEFAULT_MAX_GAP, 1.0e-6);
-            if xy.len() == before {
-                return;
-            }
-            // New samples share "now" so a fast jump still fades as one tip burst.
-            for &(x, y) in xy.iter().skip(before) {
-                last.push((x, y, now));
+            if laser_trail::append_vertex(&mut last.points, pt, MIN_POINT_GAP) {
+                last.touched = Instant::now();
+                changed = true;
             }
         }
-        self.sync_laser_trails();
+        if changed {
+            self.sync_laser_trails();
+        }
     }
 
     pub fn laser_trail_end(mut self: Pin<&mut Self>) {
@@ -921,10 +924,8 @@ impl qobject::Session {
         let now = Instant::now();
         {
             let mut rust = self.as_mut().rust_mut();
-            rust.laser_trails.retain_mut(|stroke| {
-                stroke.retain(|(_, _, t)| now.duration_since(*t) < LASER_TRAIL_TTL);
-                !stroke.is_empty()
-            });
+            rust.laser_trails
+                .retain(|stroke| now.duration_since(stroke.touched) < LASER_TRAIL_TTL);
         }
         let json = laser_trails_to_json(&self.rust().laser_trails, now);
         self.set_laser_trails_json(QString::from(&json));
@@ -960,25 +961,24 @@ fn strokes_to_json(strokes: Option<&Vec<Stroke>>) -> String {
     Value::Array(arr).to_string()
 }
 
-fn laser_trails_to_json(trails: &[TimedStroke], now: Instant) -> String {
+fn laser_trails_to_json(trails: &[LaserStroke], now: Instant) -> String {
     let ttl = LASER_TRAIL_TTL.as_secs_f64();
     let mut arr: Vec<Value> = Vec::new();
     for stroke in trails {
-        let pts: Vec<Value> = stroke
-            .iter()
-            .filter_map(|(x, y, t)| {
-                let age = now.duration_since(*t).as_secs_f64();
-                if age >= ttl {
-                    return None;
-                }
-                // Linear fade: full opacity when fresh, gone at TTL.
-                let a = 1.0 - (age / ttl);
-                Some(json!({ "x": x, "y": y, "a": a }))
-            })
-            .collect();
-        if pts.len() >= 2 {
-            arr.push(Value::Array(pts));
+        if stroke.points.len() < 2 {
+            continue;
         }
+        let age = now.duration_since(stroke.touched).as_secs_f64();
+        if age >= ttl {
+            continue;
+        }
+        let a = 1.0 - (age / ttl);
+        let pts: Vec<Value> = stroke
+            .points
+            .iter()
+            .map(|(x, y)| json!({ "x": x, "y": y }))
+            .collect();
+        arr.push(json!({ "a": a, "pts": pts }));
     }
     Value::Array(arr).to_string()
 }

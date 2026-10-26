@@ -119,9 +119,9 @@ public:
             }
         }
 
-        // Continuous red glow band + white core (single QPainterPath per stroke).
+        // One polyline → one ribbon (white interior, red glowing border).
         for (const auto &stroke : m_laserTrails)
-            paintContinuousLaserStroke(painter, stroke, w, h, m_pointerSize);
+            paintLaserPolyline(painter, stroke, w, h, m_pointerSize);
 
         if (m_pointerVisible && m_pointerX >= 0.0 && m_pointerY >= 0.0
             && m_pointerX <= 1.0 && m_pointerY <= 1.0) {
@@ -177,19 +177,20 @@ private:
         const QJsonDocument doc = QJsonDocument::fromJson(m_laserTrailsJson.toUtf8());
         if (!doc.isArray())
             return;
+        // Format: [ { "a": 1.0, "pts": [ {"x":..,"y":..}, ... ] }, ... ]
         for (const QJsonValue &strokeVal : doc.array()) {
-            if (!strokeVal.isArray())
+            if (!strokeVal.isObject())
                 continue;
-            QVector<LaserTrailPoint> stroke;
-            for (const QJsonValue &ptVal : strokeVal.toArray()) {
-                const QJsonObject obj = ptVal.toObject();
-                LaserTrailPoint pt;
-                pt.x = obj.value(QStringLiteral("x")).toDouble();
-                pt.y = obj.value(QStringLiteral("y")).toDouble();
-                pt.a = obj.value(QStringLiteral("a")).toDouble(1.0);
-                stroke.append(pt);
+            const QJsonObject obj = strokeVal.toObject();
+            LaserTrailStroke stroke;
+            stroke.a = obj.value(QStringLiteral("a")).toDouble(1.0);
+            const QJsonArray pts = obj.value(QStringLiteral("pts")).toArray();
+            for (const QJsonValue &ptVal : pts) {
+                const QJsonObject p = ptVal.toObject();
+                stroke.pts.append(QPointF(p.value(QStringLiteral("x")).toDouble(),
+                                          p.value(QStringLiteral("y")).toDouble()));
             }
-            if (stroke.size() >= 2)
+            if (stroke.pts.size() >= 2)
                 m_laserTrails.append(stroke);
         }
     }
@@ -197,7 +198,7 @@ private:
     QString m_strokesJson;
     QString m_laserTrailsJson;
     QVector<QVector<QPointF>> m_strokes;
-    QVector<QVector<LaserTrailPoint>> m_laserTrails;
+    QVector<LaserTrailStroke> m_laserTrails;
     bool m_pointerVisible = false;
     qreal m_pointerX = -1.0;
     qreal m_pointerY = -1.0;
