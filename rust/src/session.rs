@@ -40,10 +40,6 @@ pub mod qobject {
         #[namespace = "pdfpc"]
         type Session = super::SessionRust;
 
-        #[qsignal]
-        #[cxx_name = "quitRequested"]
-        fn quit_requested(self: Pin<&mut Self>);
-
         #[qinvokable]
         #[cxx_name = "loadPdf"]
         fn load_pdf(self: Pin<&mut Self>, path: &QString);
@@ -99,6 +95,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "togglePause"]
         fn toggle_pause(self: Pin<&mut Self>);
+
+        #[qinvokable]
+        #[cxx_name = "startTimer"]
+        fn start_timer(self: Pin<&mut Self>);
 
         #[qinvokable]
         #[cxx_name = "resetTimer"]
@@ -489,6 +489,21 @@ impl qobject::Session {
         self.update_timer_text();
     }
 
+    /// Start the presentation timer if it is not already running (e.g. after reset).
+    pub fn start_timer(mut self: Pin<&mut Self>) {
+        if self.rust().timer_started {
+            return;
+        }
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.timer_started = true;
+            rust.timer_paused_flag = false;
+            rust.last_tick = Some(Instant::now());
+        }
+        self.as_mut().set_timer_paused(false);
+        self.update_timer_text();
+    }
+
     pub fn reset_timer(mut self: Pin<&mut Self>) {
         {
             let mut rust = self.as_mut().rust_mut();
@@ -521,18 +536,16 @@ impl qobject::Session {
         let text_str = text.to_string();
         let ch = text_str.chars().next();
 
-        // Recent-files dialog: Escape continues the open PDF; q quits.
+        // Recent-files dialog: Escape continues the open PDF.
         if *self.recent_visible() {
-            match (key, ch) {
-                (KEY_ESCAPE, _) => self.hide_recent(),
-                (KEY_F3, _) => self.hide_recent(),
-                (_, Some('q' | 'Q')) => self.quit_requested(),
+            match key {
+                KEY_ESCAPE | KEY_F3 => self.hide_recent(),
                 _ => {}
             }
             return;
         }
 
-        // While the help is shown only h / Escape / q do anything.
+        // While the help is shown only h / Escape / F3 do anything.
         if *self.help_visible() {
             match (key, ch) {
                 (KEY_ESCAPE, _) | (_, Some('h' | 'H')) => self.set_help_visible(false),
@@ -540,7 +553,6 @@ impl qobject::Session {
                     self.as_mut().set_help_visible(false);
                     self.show_recent();
                 }
-                (_, Some('q' | 'Q')) => self.quit_requested(),
                 _ => {}
             }
             return;
@@ -589,8 +601,8 @@ impl qobject::Session {
                         'g' | 'G' => self.begin_goto(),
                         'c' | 'C' => self.clear_drawings(),
                         'p' | 'P' => self.toggle_pause(),
+                        's' | 'S' => self.start_timer(),
                         'h' | 'H' => self.set_help_visible(true),
-                        'q' | 'Q' => self.quit_requested(),
                         '1' => self.set_mode_internal(MODE_NORMAL),
                         '2' => self.set_mode_internal(MODE_LASER),
                         '3' => self.set_mode_internal(MODE_PEN),
@@ -691,16 +703,9 @@ impl qobject::Session {
         }
     }
 
-    fn maybe_start_timer_on_leave_first(mut self: Pin<&mut Self>, from_page: i32) {
+    fn maybe_start_timer_on_leave_first(self: Pin<&mut Self>, from_page: i32) {
         if from_page == 0 && !self.rust().timer_started {
-            {
-                let mut rust = self.as_mut().rust_mut();
-                rust.timer_started = true;
-                rust.timer_paused_flag = false;
-                rust.accumulated = Duration::ZERO;
-                rust.last_tick = Some(Instant::now());
-            }
-            self.set_timer_paused(false);
+            self.start_timer();
         }
     }
 
