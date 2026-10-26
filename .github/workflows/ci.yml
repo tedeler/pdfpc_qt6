@@ -45,6 +45,16 @@ jobs:
           RUSTFLAGS: "-C linker=g++"
         run: cargo build --release
 
+      - name: Laser trail continuity tests
+        env:
+          QMAKE: /usr/bin/qmake6
+          QT_VERSION_MAJOR: "6"
+          CXX: g++
+          CC: gcc
+          RUSTFLAGS: "-C linker=g++"
+          PKG_CONFIG_PATH: /usr/lib/x86_64-linux-gnu/pkgconfig
+        run: scripts/test-laser-trail-continuity.sh
+
       - name: Smoke (Xvfb)
         working-directory: rust
         env:

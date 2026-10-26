@@ -20,6 +20,9 @@ fn main() {
     .cpp_file("cpp/kwin_placer.h")
     .build();
 
+    println!("cargo:rerun-if-changed=cpp/laser_trail_geom.h");
+    println!("cargo:rerun-if-changed=cpp/test_laser_trail_geom.cpp");
+
     // cxx-qt-lib only links the Qt modules of its own features.
     println!("cargo:rustc-link-arg=-lQt6DBus");
 

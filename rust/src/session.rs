@@ -126,11 +126,11 @@ pub mod qobject {
 
         #[qinvokable]
         #[cxx_name = "laserTrailBegin"]
-        fn laser_trail_begin(self: Pin<&mut Self>, x: f64, y: f64);
+        fn laser_trail_begin(self: Pin<&mut Self>, x: f64, y: f64, straight: bool);
 
         #[qinvokable]
         #[cxx_name = "laserTrailAdd"]
-        fn laser_trail_add(self: Pin<&mut Self>, x: f64, y: f64);
+        fn laser_trail_add(self: Pin<&mut Self>, x: f64, y: f64, straight: bool);
 
         #[qinvokable]
         #[cxx_name = "laserTrailEnd"]
@@ -158,6 +158,7 @@ pub mod qobject {
     }
 }
 
+use crate::laser_trail::{self, MIN_POINT_GAP};
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -206,8 +207,15 @@ const CTRL_MODIFIER: i32 = 0x0400_0000;
 
 type Point = (f64, f64);
 type Stroke = Vec<Point>;
-type TimedPoint = (f64, f64, Instant);
-type TimedStroke = Vec<TimedPoint>;
+
+/// One mouse-drag polyline (or straight segment). Fade starts only on release.
+struct LaserStroke {
+    points: Vec<Point>,
+    start: Point,
+    straight: bool,
+    /// `None` while the button is held; set in `laser_trail_end`.
+    fade_started: Option<Instant>,
+}
 
 pub struct SessionRust {
     pdf_url: QString,
@@ -241,7 +249,7 @@ pub struct SessionRust {
 
     strokes: HashMap<i32, Vec<Stroke>>,
     drawing: bool,
-    laser_trails: Vec<TimedStroke>,
+    laser_trails: Vec<LaserStroke>,
     laser_drawing: bool,
     timer_started: bool,
     timer_paused_flag: bool,
@@ -346,6 +354,7 @@ impl qobject::Session {
         self.as_mut().set_goto_buffer(QString::default());
         self.as_mut().sync_recent_json();
         self.as_mut().pointer_hide();
+        self.as_mut().sync_laser_trails();
         self.as_mut().refresh_derived();
         self.as_mut().set_pdf_url(url);
     }
@@ -672,40 +681,54 @@ impl qobject::Session {
         self.set_pointer_y(-1.0);
     }
 
-    pub fn laser_trail_begin(mut self: Pin<&mut Self>, x: f64, y: f64) {
+    pub fn laser_trail_begin(mut self: Pin<&mut Self>, x: f64, y: f64, straight: bool) {
         if *self.mode() != MODE_LASER {
             return;
         }
-        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0), Instant::now());
+        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
         {
             let mut rust = self.as_mut().rust_mut();
-            rust.laser_trails.push(vec![pt]);
+            rust.laser_trails.push(LaserStroke {
+                points: vec![pt],
+                start: pt,
+                straight,
+                fade_started: None,
+            });
             rust.laser_drawing = true;
         }
         self.sync_laser_trails();
     }
 
-    pub fn laser_trail_add(mut self: Pin<&mut Self>, x: f64, y: f64) {
+    pub fn laser_trail_add(mut self: Pin<&mut Self>, x: f64, y: f64, straight: bool) {
         if !self.rust().laser_drawing || *self.mode() != MODE_LASER {
             return;
         }
-        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0), Instant::now());
+        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0));
+        let mut changed = false;
         if let Some(last) = self.as_mut().rust_mut().laser_trails.last_mut() {
-            // Skip near-duplicates to keep the path light.
-            if let Some(&(lx, ly, _)) = last.last() {
-                let dx = lx - pt.0;
-                let dy = ly - pt.1;
-                if dx * dx + dy * dy < 1.0e-6 {
-                    return;
-                }
+            last.straight = straight;
+            if straight {
+                laser_trail::set_straight_segment(&mut last.points, last.start, pt);
+                changed = true;
+            } else if laser_trail::append_vertex(&mut last.points, pt, MIN_POINT_GAP) {
+                changed = true;
             }
-            last.push(pt);
         }
-        self.sync_laser_trails();
+        if changed {
+            self.sync_laser_trails();
+        }
     }
 
     pub fn laser_trail_end(mut self: Pin<&mut Self>) {
-        self.as_mut().rust_mut().laser_drawing = false;
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.laser_drawing = false;
+            if let Some(last) = rust.laser_trails.last_mut() {
+                if last.fade_started.is_none() {
+                    last.fade_started = Some(Instant::now());
+                }
+            }
+        }
         self.sync_laser_trails();
     }
 
@@ -917,9 +940,9 @@ impl qobject::Session {
         let now = Instant::now();
         {
             let mut rust = self.as_mut().rust_mut();
-            rust.laser_trails.retain_mut(|stroke| {
-                stroke.retain(|(_, _, t)| now.duration_since(*t) < LASER_TRAIL_TTL);
-                !stroke.is_empty()
+            rust.laser_trails.retain(|stroke| {
+                laser_trail::stroke_alpha(stroke.fade_started, now, LASER_TRAIL_TTL.as_secs_f64())
+                    .is_some()
             });
         }
         let json = laser_trails_to_json(&self.rust().laser_trails, now);
@@ -956,25 +979,22 @@ fn strokes_to_json(strokes: Option<&Vec<Stroke>>) -> String {
     Value::Array(arr).to_string()
 }
 
-fn laser_trails_to_json(trails: &[TimedStroke], now: Instant) -> String {
+fn laser_trails_to_json(trails: &[LaserStroke], now: Instant) -> String {
     let ttl = LASER_TRAIL_TTL.as_secs_f64();
     let mut arr: Vec<Value> = Vec::new();
     for stroke in trails {
-        let pts: Vec<Value> = stroke
-            .iter()
-            .filter_map(|(x, y, t)| {
-                let age = now.duration_since(*t).as_secs_f64();
-                if age >= ttl {
-                    return None;
-                }
-                // Linear fade: full opacity when fresh, gone at TTL.
-                let a = 1.0 - (age / ttl);
-                Some(json!({ "x": x, "y": y, "a": a }))
-            })
-            .collect();
-        if pts.len() >= 2 {
-            arr.push(Value::Array(pts));
+        if stroke.points.len() < 2 {
+            continue;
         }
+        let Some(a) = laser_trail::stroke_alpha(stroke.fade_started, now, ttl) else {
+            continue;
+        };
+        let pts: Vec<Value> = stroke
+            .points
+            .iter()
+            .map(|(x, y)| json!({ "x": x, "y": y }))
+            .collect();
+        arr.push(json!({ "a": a, "pts": pts }));
     }
     Value::Array(arr).to_string()
 }

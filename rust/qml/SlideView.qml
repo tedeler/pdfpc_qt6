@@ -155,6 +155,10 @@ Item {
             return Math.sqrt(dx * dx + dy * dy)
         }
 
+        function laserStraight(modifiers) {
+            return (modifiers & Qt.ShiftModifier) !== 0
+        }
+
         onClicked: function (mouse) {
             if (root.ctrl.mode === 0)
                 root.ctrl.mouseClick(mouse.button)
@@ -165,13 +169,14 @@ Item {
             if (root.ctrl.mode === 1) {
                 root.ctrl.pointerMove(p.x, p.y)
                 if (mouse.buttons & Qt.LeftButton) {
+                    var straight = laserStraight(mouse.modifiers)
                     if (!laserDragged
                             && pageDist(pressX, pressY, p.x, p.y) >= clickSlop) {
                         laserDragged = true
-                        root.ctrl.laserTrailBegin(pressX, pressY)
-                        root.ctrl.laserTrailAdd(p.x, p.y)
+                        root.ctrl.laserTrailBegin(pressX, pressY, straight)
+                        root.ctrl.laserTrailAdd(p.x, p.y, straight)
                     } else if (laserDragged) {
-                        root.ctrl.laserTrailAdd(p.x, p.y)
+                        root.ctrl.laserTrailAdd(p.x, p.y, straight)
                     }
                 }
             } else if (root.ctrl.mode === 2 && (mouse.buttons & Qt.LeftButton)) {
