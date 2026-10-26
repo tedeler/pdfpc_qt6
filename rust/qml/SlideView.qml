@@ -23,24 +23,16 @@ Item {
         onStatusChanged: function () {
             if (status === PdfDocument.Ready && pageCount > 0 && root.ctrl)
                 root.ctrl.applyPageCount(pageCount)
-            // Remount the rasterizer once Ready so currentFrame is applied at
-            // creation time (PdfPageImage often ignores a pre-set frame).
+            // Remount once Ready so currentFrame is applied at creation time
+            // (PdfPageImage often ignores a pre-set frame before Ready).
             if (status === PdfDocument.Ready)
-                root.bumpRaster()
+                root.hardResetRaster()
         }
         onPageCountChanged: function () {
             if (status === PdfDocument.Ready && pageCount > 0 && root.ctrl)
                 root.ctrl.applyPageCount(pageCount)
         }
-        onSourceChanged: root.bumpRaster()
-    }
-
-    function bumpRaster() {
-        // Tear down and recreate PdfPageImage so currentFrame is honored.
-        pageLoader.active = false
-        Qt.callLater(function () {
-            pageLoader.active = root.pageValid
-        })
+        onSourceChanged: root.hardResetRaster()
     }
 
     readonly property bool pageValid: root.page >= 0
@@ -50,18 +42,88 @@ Item {
             ? Math.max(0, Math.min(root.page, localDocument.pageCount - 1))
             : 0
 
+    // Ping-pong raster slots: keep the front page visible while the back slot
+    // remounts for the new frame — avoids the blank flash of a single Loader.
+    property int frontSlot: 0
+    property int loadSeq: 0
+
     onFrameIndexChanged: {
-        // Page changes after Ready: recreate so next-preview and restores never
-        // stick on a stale decoded frame.
         if (root.pageValid)
-            root.bumpRaster()
+            root.loadFrame(root.frameIndex, false)
     }
 
     onPageValidChanged: {
         if (root.pageValid)
-            root.bumpRaster()
+            root.hardResetRaster()
         else
-            pageLoader.active = false
+            root.teardownSlots()
+    }
+
+    function teardownSlots() {
+        slot0.active = false
+        slot1.active = false
+    }
+
+    function hardResetRaster() {
+        root.loadSeq += 1
+        root.teardownSlots()
+        root.frontSlot = 0
+        if (root.pageValid)
+            root.loadIntoSlot(0, root.frameIndex, root.loadSeq, true)
+    }
+
+    function loadFrame(frame, forceFront) {
+        if (!root.pageValid)
+            return
+        var front = root.frontItem()
+        if (!forceFront && front
+                && front.currentFrame === frame
+                && front.status === Image.Ready
+                && front.paintedWidth > 0) {
+            return
+        }
+        // An in-flight load (e.g. hardReset) already targets this frame.
+        if ((slot0.seq === root.loadSeq && slot0.wantedFrame === frame)
+                || (slot1.seq === root.loadSeq && slot1.wantedFrame === frame)) {
+            return
+        }
+        var back = 1 - root.frontSlot
+        root.loadSeq += 1
+        root.loadIntoSlot(back, frame, root.loadSeq, true)
+    }
+
+    function loadIntoSlot(slot, frame, seq, promoteWhenReady) {
+        var loader = slot === 0 ? slot0 : slot1
+        loader.wantedFrame = frame
+        loader.seq = seq
+        loader.promoteWhenReady = promoteWhenReady
+        loader.active = false
+        Qt.callLater(function () {
+            if (loader.seq !== seq)
+                return
+            if (!root.pageValid)
+                return
+            loader.active = true
+        })
+    }
+
+    function frontItem() {
+        var loader = root.frontSlot === 0 ? slot0 : slot1
+        return loader.item
+    }
+
+    function onSlotReady(slot) {
+        var loader = slot === 0 ? slot0 : slot1
+        if (!loader.item)
+            return
+        if (loader.seq !== root.loadSeq)
+            return
+        if (loader.item.currentFrame !== root.frameIndex)
+            return
+        if (loader.item.status !== Image.Ready || loader.item.paintedWidth <= 0)
+            return
+        if (loader.promoteWhenReady)
+            root.frontSlot = slot
     }
 
     readonly property size pointSize: root.pageValid
@@ -70,14 +132,15 @@ Item {
     readonly property real fitScale: Math.min(width / Math.max(1, pointSize.width),
                                               height / Math.max(1, pointSize.height))
 
-    readonly property real pageX: pageLoader.item
-            ? pageLoader.item.x + (pageLoader.item.width - pageLoader.item.paintedWidth) / 2
+    readonly property var frontPage: root.frontItem()
+    readonly property real pageX: frontPage
+            ? frontPage.x + (frontPage.width - frontPage.paintedWidth) / 2
             : 0
-    readonly property real pageY: pageLoader.item
-            ? pageLoader.item.y + (pageLoader.item.height - pageLoader.item.paintedHeight) / 2
+    readonly property real pageY: frontPage
+            ? frontPage.y + (frontPage.height - frontPage.paintedHeight) / 2
             : 0
-    readonly property real pageW: pageLoader.item ? Math.max(1, pageLoader.item.paintedWidth) : 1
-    readonly property real pageH: pageLoader.item ? Math.max(1, pageLoader.item.paintedHeight) : 1
+    readonly property real pageW: frontPage ? Math.max(1, frontPage.paintedWidth) : 1
+    readonly property real pageH: frontPage ? Math.max(1, frontPage.paintedHeight) : 1
 
     Rectangle {
         id: paper
@@ -86,24 +149,57 @@ Item {
         width: root.pageW
         height: root.pageH
         color: "#ffffff"
-        visible: pageLoader.item && pageLoader.item.visible && pageLoader.item.paintedWidth > 0
+        visible: root.frontPage && root.frontPage.visible && root.frontPage.paintedWidth > 0
         z: 0
     }
 
     Loader {
-        id: pageLoader
+        id: slot0
+        property int wantedFrame: 0
+        property int seq: 0
+        property bool promoteWhenReady: false
+        readonly property int slotIndex: 0
+
         anchors.fill: parent
         active: false
+        z: root.frontSlot === 0 ? 2 : 1
+        opacity: root.frontSlot === 0 ? 1 : 0
         sourceComponent: pageComponent
-        z: 1
+
+        onStatusChanged: {
+            if (status === Loader.Ready)
+                root.onSlotReady(0)
+        }
+    }
+
+    Loader {
+        id: slot1
+        property int wantedFrame: 0
+        property int seq: 0
+        property bool promoteWhenReady: false
+        readonly property int slotIndex: 1
+
+        anchors.fill: parent
+        active: false
+        z: root.frontSlot === 1 ? 2 : 1
+        opacity: root.frontSlot === 1 ? 1 : 0
+        sourceComponent: pageComponent
+
+        onStatusChanged: {
+            if (status === Loader.Ready)
+                root.onSlotReady(1)
+        }
     }
 
     Component {
         id: pageComponent
         PdfPageImage {
+            // parent is the Loader that created this item.
             anchors.fill: parent
             document: localDocument
-            currentFrame: root.frameIndex
+            // Freeze the frame at remount time so the back buffer does not jump
+            // when root.frameIndex advances again mid-decode.
+            currentFrame: parent.wantedFrame
             fillMode: Image.PreserveAspectFit
             sourceSize.width: Math.max(1, Math.round(root.pointSize.width * root.fitScale * Screen.devicePixelRatio))
             sourceSize.height: Math.max(1, Math.round(root.pointSize.height * root.fitScale * Screen.devicePixelRatio))
@@ -113,7 +209,12 @@ Item {
             Component.onCompleted: {
                 if ("retainWhileLoading" in this)
                     retainWhileLoading = true
+                // Loader.Ready can fire before Image.Ready; re-check promote.
+                root.onSlotReady(parent.slotIndex)
             }
+
+            onStatusChanged: root.onSlotReady(parent.slotIndex)
+            onPaintedWidthChanged: root.onSlotReady(parent.slotIndex)
         }
     }
 
@@ -130,7 +231,7 @@ Item {
         pointerY: root.pointerY
         pointerSize: root.ctrl.pointer_size
         visible: root.pageValid && paper.visible
-        z: 2
+        z: 3
     }
 
     MouseArea {
