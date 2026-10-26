@@ -45,7 +45,7 @@ touch "$STAGE/debian/control"
 )
 SHLIBS="$(sed -n 's/^shlibs:Depends=//p' "$STAGE/DEBIAN/substvars")"
 # Qt PDF is loaded via QML plugins (not in NEEDED); keep those packages explicit.
-RUNTIME_DEPS="libqt6pdf6, libqt6pdfquick6, qml6-module-qtquick, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qml6-module-qtquick-window, qml6-module-qtquick-pdf, qml6-module-qtqml, qml6-module-qtqml-workerscript"
+RUNTIME_DEPS="libqt6pdf6, libqt6pdfquick6, qml6-module-qtquick, qml6-module-qtquick-controls, qml6-module-qtquick-layouts, qml6-module-qtquick-window, qml6-module-qtquick-pdf, qml6-module-qtqml, qml6-module-qtqml-workerscript, qml6-module-qtquick-dialogs"
 DEPENDS="${SHLIBS}, ${RUNTIME_DEPS}"
 
 GIT_ID="$(git -C "$ROOT" rev-parse --short=12 HEAD 2>/dev/null || echo unknown)"
