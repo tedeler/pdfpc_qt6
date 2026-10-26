@@ -42,11 +42,11 @@ packaging/build-deb.sh
 Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`):
 
 ```bash
-sudo apt install ./pdfpc-qt6_0.03_amd64.deb
-# or: sudo dpkg -i pdfpc-qt6_0.03_amd64.deb
+sudo apt install ./pdfpc-qt6_0.04_amd64.deb
+# or: sudo dpkg -i pdfpc-qt6_0.04_amd64.deb
 ```
 
-CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v0.03`) additionally publishes a GitHub Release with the same package.
+CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v0.04`) additionally publishes a GitHub Release with the same package.
 
 ## Usage
 
