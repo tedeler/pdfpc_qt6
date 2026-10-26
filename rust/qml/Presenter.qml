@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Window
 import QtQuick.Pdf
 import org.pdfpc.app
@@ -58,6 +59,26 @@ ApplicationWindow {
         focus: true
 
         Keys.onPressed: function (event) {
+            if (root.ctrl.recent_visible) {
+                if (event.key === Qt.Key_Down) {
+                    if (recentList.count > 0)
+                        recentList.currentIndex = Math.min(recentList.count - 1, recentList.currentIndex + 1)
+                    event.accepted = true
+                    return
+                }
+                if (event.key === Qt.Key_Up) {
+                    if (recentList.count > 0)
+                        recentList.currentIndex = Math.max(0, recentList.currentIndex - 1)
+                    event.accepted = true
+                    return
+                }
+                if (event.key === Qt.Key_Return || event.key === Qt.Key_Enter) {
+                    if (recentList.currentIndex >= 0 && recentList.model[recentList.currentIndex])
+                        root.ctrl.loadPdf(recentList.model[recentList.currentIndex].path)
+                    event.accepted = true
+                    return
+                }
+            }
             root.ctrl.handleKey(event.key, event.modifiers, event.text)
             event.accepted = true
         }
@@ -225,9 +246,29 @@ ApplicationWindow {
         ["p", "Pause / resume timer"],
         ["Ctrl+T", "Reset timer"],
         ["Shift+S", "Swap presenter and audience screens"],
+        ["F3", "Open recent files / choose PDF"],
         ["h", "Show / hide this help"],
-        ["Escape", "Close help, cancel go-to, unblank, unfreeze, resume timer, normal mouse"]
+        ["Escape", "Close recent/help, cancel go-to, unblank, unfreeze, resume timer, normal mouse"]
     ]
+
+    function recentEntries() {
+        try {
+            return JSON.parse(root.ctrl.recent_files_json)
+        } catch (e) {
+            return []
+        }
+    }
+
+    FileDialog {
+        id: openPdfDialog
+        title: qsTr("Open PDF")
+        nameFilters: [qsTr("PDF files (*.pdf)"), qsTr("All files (*)")]
+        onAccepted: {
+            root.ctrl.loadPdf("" + selectedFile)
+            focusScope.forceActiveFocus()
+        }
+        onRejected: focusScope.forceActiveFocus()
+    }
 
     Rectangle {
         id: helpOverlay
@@ -290,6 +331,200 @@ ApplicationWindow {
                     font.pixelSize: helpGrid.fontSize - 2
                 }
             }
+        }
+    }
+
+    Rectangle {
+        id: recentOverlay
+        anchors.fill: parent
+        visible: root.ctrl.recent_visible
+        color: "#e0101010"
+        z: 1001
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(parent.width * 0.72, 640)
+            height: Math.min(parent.height * 0.78, 480)
+            color: "#202020"
+            border.color: "#505050"
+            radius: 8
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 20
+                spacing: 12
+
+                Text {
+                    text: qsTr("Open PDF")
+                    color: "#ffffff"
+                    font.pixelSize: Math.max(16, Math.round(root.height / 36))
+                    font.bold: true
+                }
+
+                Text {
+                    width: parent.width
+                    text: qsTr("Recently opened files")
+                    color: "#a0a0a0"
+                    font.pixelSize: Math.max(12, Math.round(root.height / 48))
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: parent.height - 120
+                    color: "#161616"
+                    radius: 4
+                    border.color: "#404040"
+
+                    ListView {
+                        id: recentList
+                        anchors.fill: parent
+                        anchors.margins: 4
+                        clip: true
+                        model: root.ctrl.recent_visible ? root.recentEntries() : []
+                        currentIndex: count > 0 ? 0 : -1
+                        // Keep keyboard focus on focusScope so F3/Escape/arrows
+                        // reach Keys.onPressed (ListView focus would swallow them).
+                        focus: false
+                        activeFocusOnTab: false
+
+                        delegate: Item {
+                            width: recentList.width
+                            height: Math.max(40, Math.round(root.height / 22))
+
+                            required property var modelData
+                            required property int index
+
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                color: recentList.currentIndex === index ? "#2a4a6a" : "transparent"
+                                radius: 3
+
+                                Column {
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.left: parent.left
+                                    anchors.leftMargin: 10
+                                    anchors.right: pageLabel.left
+                                    anchors.rightMargin: 8
+                                    spacing: 2
+
+                                    Text {
+                                        width: parent.width
+                                        text: modelData.name
+                                        color: "#f0f0f0"
+                                        elide: Text.ElideMiddle
+                                        font.pixelSize: Math.max(13, Math.round(root.height / 48))
+                                    }
+                                    Text {
+                                        width: parent.width
+                                        text: modelData.path
+                                        color: "#808080"
+                                        elide: Text.ElideMiddle
+                                        font.pixelSize: Math.max(10, Math.round(root.height / 58))
+                                        font.family: "DejaVu Sans Mono"
+                                    }
+                                }
+
+                                Text {
+                                    id: pageLabel
+                                    anchors.right: parent.right
+                                    anchors.rightMargin: 12
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    text: qsTr("p. %1").arg(modelData.page + 1)
+                                    color: "#7ec8ff"
+                                    font.pixelSize: Math.max(12, Math.round(root.height / 50))
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    onClicked: recentList.currentIndex = index
+                                    onDoubleClicked: root.ctrl.loadPdf(modelData.path)
+                                }
+                            }
+                        }
+
+                        Text {
+                            anchors.centerIn: parent
+                            visible: recentList.count === 0
+                            text: qsTr("No recent files yet")
+                            color: "#707070"
+                            font.pixelSize: 14
+                        }
+                    }
+                }
+
+                Row {
+                    spacing: 12
+
+                    Rectangle {
+                        width: openSelectedText.implicitWidth + 24
+                        height: 36
+                        radius: 4
+                        color: recentList.currentIndex >= 0 ? "#2f8fd8" : "#404040"
+
+                        Text {
+                            id: openSelectedText
+                            anchors.centerIn: parent
+                            text: qsTr("Open")
+                            color: "#ffffff"
+                            font.pixelSize: 14
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            enabled: recentList.currentIndex >= 0
+                            onClicked: {
+                                var item = recentList.model[recentList.currentIndex]
+                                if (item)
+                                    root.ctrl.loadPdf(item.path)
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        width: browseText.implicitWidth + 24
+                        height: 36
+                        radius: 4
+                        color: "#3a3a3a"
+
+                        Text {
+                            id: browseText
+                            anchors.centerIn: parent
+                            text: qsTr("Browse…")
+                            color: "#ffffff"
+                            font.pixelSize: 14
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            onClicked: openPdfDialog.open()
+                        }
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: ("" + root.ctrl.pdf_url).length > 0
+                              ? qsTr("Escape continues the current PDF")
+                              : qsTr("Choose a file to start")
+                        color: "#808080"
+                        font.pixelSize: 12
+                    }
+                }
+            }
+        }
+    }
+
+    Connections {
+        target: root.ctrl
+        function onRecent_visibleChanged() {
+            if (root.ctrl.recent_visible)
+                focusScope.forceActiveFocus()
         }
     }
 

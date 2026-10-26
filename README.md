@@ -16,7 +16,8 @@ sudo apt install \
   qml6-module-qtquick qml6-module-qtquick-controls \
   qml6-module-qtquick-layouts qml6-module-qtquick-window \
   qml6-module-qtquick-pdf qml6-module-qtqml \
-  qml6-module-qtqml-workerscript qt6-wayland
+  qml6-module-qtqml-workerscript qml6-module-qtquick-dialogs \
+  qt6-wayland
 ```
 
 Rust **1.85+** (tested with 1.88). Then:
@@ -50,9 +51,10 @@ CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package
 ## Usage
 
 ```bash
-pdfpc-qt6 [--windowed|-w] presentation.pdf
+pdfpc-qt6 [--windowed|-w] [presentation.pdf]
 ```
 
+- Without a PDF argument, pdfpc-qt6 opens a recent-files dialog (same as `F3`). Pick a recent file or browse. For each file it remembers the last slide and restores it on open (`~/.config/pdfpc-qt6/recent.json`).
 - Two monitors: the presenter view is always a normal window covering half the area of the primary screen (width and height × 1/√2), centered. The audience view is fullscreen on the secondary screen.
 - `Shift+S` swaps the screens: the audience goes fullscreen on the other screen and the presenter is re-centered there with half its area.
 - One monitor: the audience view is a normal window as well, since fullscreen would cover the presenter. When a second screen is connected later, pdfpc switches to the two-screen layout.
@@ -83,16 +85,17 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | `p` | Pause / resume timer |
 | Ctrl+T | Reset timer |
 | Shift+S | Swap presenter and audience screens |
+| F3 | Recent files / open PDF (Escape continues the current PDF) |
 | `h` | Show / hide the shortcut help (presenter only) |
-| Escape | Close help, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
+| Escape | Close recent/help, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
 
-Keys work in both windows. While the help is open only `h` and Escape act. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
+Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
 
 Timer starts when you leave page 1, or with `s` (needed again after Ctrl+T reset). Shown only on the presenter.
 
 ## Out of scope
 
-`pdfpcrc`, sidecars, notes, overlays, overview, movies, links, transitions, REST, QR, D-Bus remote control, eraser, pen colors, undo, persistent drawings, Windows.
+`pdfpcrc`, sidecars, notes, overlays, overview, movies, links, transitions, REST, QR, D-Bus remote control, eraser, pen colors, undo, persistent drawings (ink), Windows.
 
 ## PDF rendering
 

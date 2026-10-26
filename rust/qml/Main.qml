@@ -21,11 +21,11 @@ QtObject {
         source: root.session.pdf_url
 
         onStatusChanged: function () {
-            if (status === PdfDocument.Ready)
+            if (status === PdfDocument.Ready && pageCount > 0)
                 root.session.applyPageCount(pageCount)
         }
         onPageCountChanged: function () {
-            if (status === PdfDocument.Ready)
+            if (status === PdfDocument.Ready && pageCount > 0)
                 root.session.applyPageCount(pageCount)
         }
     }
@@ -213,7 +213,7 @@ QtObject {
             if (args[i] === "--windowed" || args[i] === "-w")
                 userWindowed = true
             else if (args[i] === "--help" || args[i] === "-h") {
-                console.log("Usage: pdfpc-qt6 [--windowed] <file.pdf>")
+                console.log("Usage: pdfpc-qt6 [--windowed] [file.pdf]")
                 Qt.quit()
                 return
             } else if (!args[i].startsWith("-") && pdfPath === "") {
@@ -222,11 +222,10 @@ QtObject {
         }
 
         if (pdfPath === "") {
-            console.log("Usage: pdfpc-qt6 [--windowed] <file.pdf>")
-            Qt.quit()
-            return
+            session.showRecent()
+        } else {
+            session.loadPdf(pdfPath)
         }
-        session.loadPdf(pdfPath)
         started = true
         updateScreenLayout()
     }

@@ -1,5 +1,6 @@
 //! pdfpc — slim dual-monitor PDF presenter.
 
+mod recent;
 mod session;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
