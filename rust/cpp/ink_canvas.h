@@ -10,13 +10,15 @@
 #include <QtQuick/QQuickPaintedItem>
 #include <QtQml/qqmlregistration.h>
 
-// Overlay that paints pen strokes and an optional laser pointer in page
-// coordinates (0..1), matching the letterboxed slide image beneath it.
+// Overlay that paints pen strokes, temporary laser afterglow trails, and an
+// optional laser pointer in page coordinates (0..1), matching the letterboxed
+// slide image beneath it.
 class InkCanvas : public QQuickPaintedItem
 {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(QString strokesJson READ strokesJson WRITE setStrokesJson NOTIFY strokesJsonChanged)
+    Q_PROPERTY(QString laserTrailsJson READ laserTrailsJson WRITE setLaserTrailsJson NOTIFY laserTrailsJsonChanged)
     Q_PROPERTY(bool pointerVisible READ pointerVisible WRITE setPointerVisible NOTIFY pointerVisibleChanged)
     Q_PROPERTY(qreal pointerX READ pointerX WRITE setPointerX NOTIFY pointerXChanged)
     Q_PROPERTY(qreal pointerY READ pointerY WRITE setPointerY NOTIFY pointerYChanged)
@@ -40,6 +42,17 @@ public:
         m_strokesJson = json;
         parseStrokes();
         emit strokesJsonChanged();
+        update();
+    }
+
+    QString laserTrailsJson() const { return m_laserTrailsJson; }
+    void setLaserTrailsJson(const QString &json)
+    {
+        if (m_laserTrailsJson == json)
+            return;
+        m_laserTrailsJson = json;
+        parseLaserTrails();
+        emit laserTrailsJsonChanged();
         update();
     }
 
@@ -104,6 +117,33 @@ public:
             }
         }
 
+        // Laser afterglow: white outline, red core; opacity from each point's age.
+        const qreal coreWidth = qMax<qreal>(2.5, m_pointerSize * h * 0.55);
+        const qreal outlineWidth = coreWidth + qMax<qreal>(2.0, coreWidth * 0.55);
+        for (const auto &stroke : m_laserTrails) {
+            if (stroke.size() < 2)
+                continue;
+            for (int i = 1; i < stroke.size(); ++i) {
+                const TimedPoint &pa = stroke[i - 1];
+                const TimedPoint &pb = stroke[i];
+                const qreal alpha = qBound(0.0, (pa.a + pb.a) * 0.5, 1.0);
+                if (alpha <= 0.01)
+                    continue;
+                const QPointF a(pa.x * w, pa.y * h);
+                const QPointF b(pb.x * w, pb.y * h);
+
+                QPen outline(QColor(255, 255, 255, int(230 * alpha)), outlineWidth,
+                             Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter->setPen(outline);
+                painter->drawLine(a, b);
+
+                QPen core(QColor(220, 30, 30, int(255 * alpha)), coreWidth,
+                          Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter->setPen(core);
+                painter->drawLine(a, b);
+            }
+        }
+
         if (m_pointerVisible && m_pointerX >= 0.0 && m_pointerY >= 0.0
             && m_pointerX <= 1.0 && m_pointerY <= 1.0) {
             const QPointF c(m_pointerX * w, m_pointerY * h);
@@ -122,12 +162,19 @@ public:
 
 signals:
     void strokesJsonChanged();
+    void laserTrailsJsonChanged();
     void pointerVisibleChanged();
     void pointerXChanged();
     void pointerYChanged();
     void pointerSizeChanged();
 
 private:
+    struct TimedPoint {
+        qreal x = 0.0;
+        qreal y = 0.0;
+        qreal a = 1.0;
+    };
+
     void parseStrokes()
     {
         m_strokes.clear();
@@ -149,8 +196,33 @@ private:
         }
     }
 
+    void parseLaserTrails()
+    {
+        m_laserTrails.clear();
+        const QJsonDocument doc = QJsonDocument::fromJson(m_laserTrailsJson.toUtf8());
+        if (!doc.isArray())
+            return;
+        for (const QJsonValue &strokeVal : doc.array()) {
+            if (!strokeVal.isArray())
+                continue;
+            QVector<TimedPoint> stroke;
+            for (const QJsonValue &ptVal : strokeVal.toArray()) {
+                const QJsonObject obj = ptVal.toObject();
+                TimedPoint pt;
+                pt.x = obj.value(QStringLiteral("x")).toDouble();
+                pt.y = obj.value(QStringLiteral("y")).toDouble();
+                pt.a = obj.value(QStringLiteral("a")).toDouble(1.0);
+                stroke.append(pt);
+            }
+            if (stroke.size() >= 2)
+                m_laserTrails.append(stroke);
+        }
+    }
+
     QString m_strokesJson;
+    QString m_laserTrailsJson;
     QVector<QVector<QPointF>> m_strokes;
+    QVector<QVector<TimedPoint>> m_laserTrails;
     bool m_pointerVisible = false;
     qreal m_pointerX = -1.0;
     qreal m_pointerY = -1.0;

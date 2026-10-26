@@ -24,6 +24,7 @@ pub mod qobject {
         #[qproperty(f64, pointer_size)]
         #[qproperty(QString, current_strokes_json)]
         #[qproperty(QString, audience_strokes_json)]
+        #[qproperty(QString, laser_trails_json)]
         #[qproperty(QString, page_label)]
         #[qproperty(QString, timer_text)]
         #[qproperty(bool, timer_paused)]
@@ -114,6 +115,18 @@ pub mod qobject {
         fn pointer_hide(self: Pin<&mut Self>);
 
         #[qinvokable]
+        #[cxx_name = "laserTrailBegin"]
+        fn laser_trail_begin(self: Pin<&mut Self>, x: f64, y: f64);
+
+        #[qinvokable]
+        #[cxx_name = "laserTrailAdd"]
+        fn laser_trail_add(self: Pin<&mut Self>, x: f64, y: f64);
+
+        #[qinvokable]
+        #[cxx_name = "laserTrailEnd"]
+        fn laser_trail_end(self: Pin<&mut Self>);
+
+        #[qinvokable]
         #[cxx_name = "strokeBegin"]
         fn stroke_begin(self: Pin<&mut Self>, x: f64, y: f64);
 
@@ -171,11 +184,16 @@ const POINTER_SIZE_MIN: f64 = 0.008;
 const POINTER_SIZE_MAX: f64 = 0.08;
 const POINTER_SIZE_STEP: f64 = 1.25;
 
+/// Laser afterglow trail lifetime (left-button drag in laser mode).
+const LASER_TRAIL_TTL: Duration = Duration::from_secs(2);
+
 const SHIFT_MODIFIER: i32 = 0x0200_0000;
 const CTRL_MODIFIER: i32 = 0x0400_0000;
 
 type Point = (f64, f64);
 type Stroke = Vec<Point>;
+type TimedPoint = (f64, f64, Instant);
+type TimedStroke = Vec<TimedPoint>;
 
 pub struct SessionRust {
     pdf_url: QString,
@@ -192,6 +210,7 @@ pub struct SessionRust {
     pointer_size: f64,
     current_strokes_json: QString,
     audience_strokes_json: QString,
+    laser_trails_json: QString,
     page_label: QString,
     timer_text: QString,
     timer_paused: bool,
@@ -206,6 +225,8 @@ pub struct SessionRust {
 
     strokes: HashMap<i32, Vec<Stroke>>,
     drawing: bool,
+    laser_trails: Vec<TimedStroke>,
+    laser_drawing: bool,
     timer_started: bool,
     timer_paused_flag: bool,
     accumulated: Duration,
@@ -229,6 +250,7 @@ impl Default for SessionRust {
             pointer_size: POINTER_SIZE_DEFAULT,
             current_strokes_json: QString::from("[]"),
             audience_strokes_json: QString::from("[]"),
+            laser_trails_json: QString::from("[]"),
             page_label: QString::from("0 / 0"),
             timer_text: QString::from("00:00:00"),
             timer_paused: false,
@@ -242,6 +264,8 @@ impl Default for SessionRust {
             git_id: QString::from(env!("PDFPC_GIT_ID")),
             strokes: HashMap::new(),
             drawing: false,
+            laser_trails: Vec::new(),
+            laser_drawing: false,
             timer_started: false,
             timer_paused_flag: false,
             accumulated: Duration::ZERO,
@@ -292,6 +316,7 @@ impl qobject::Session {
             return;
         }
         self.as_mut().maybe_start_timer_on_leave_first(cur);
+        self.as_mut().clear_laser_trails();
         self.as_mut().set_current_page(cur + 1);
         self.refresh_derived();
     }
@@ -305,11 +330,13 @@ impl qobject::Session {
         if cur <= 0 {
             return;
         }
+        self.as_mut().clear_laser_trails();
         self.as_mut().set_current_page(cur - 1);
         self.refresh_derived();
     }
 
     pub fn goto_first(mut self: Pin<&mut Self>) {
+        self.as_mut().clear_laser_trails();
         self.as_mut().set_current_page(0);
         self.refresh_derived();
     }
@@ -317,6 +344,7 @@ impl qobject::Session {
     pub fn goto_last(mut self: Pin<&mut Self>) {
         let count = *self.page_count();
         if count > 0 {
+            self.as_mut().clear_laser_trails();
             self.as_mut().set_current_page(count - 1);
             self.refresh_derived();
         }
@@ -431,11 +459,14 @@ impl qobject::Session {
         self.set_timer_text(QString::from("00:00:00"));
     }
 
-    pub fn tick(self: Pin<&mut Self>) {
-        if !self.rust().timer_started || self.rust().timer_paused_flag {
-            return;
+    pub fn tick(mut self: Pin<&mut Self>) {
+        if self.rust().timer_started && !self.rust().timer_paused_flag {
+            self.as_mut().update_timer_text();
         }
-        self.update_timer_text();
+        // Keep afterglow opacity in sync even when the presentation timer is idle.
+        if !self.rust().laser_trails.is_empty() {
+            self.sync_laser_trails();
+        }
     }
 
     pub fn swap_screens(mut self: Pin<&mut Self>) {
@@ -478,12 +509,13 @@ impl qobject::Session {
         let mode = *self.mode();
         match key {
             KEY_RIGHT | KEY_DOWN | KEY_SPACE | KEY_RETURN | KEY_ENTER | KEY_PAGE_DOWN => {
-                if mode == MODE_NORMAL {
+                // Navigation stays available in laser mode (pen keeps focus on drawing).
+                if mode == MODE_NORMAL || mode == MODE_LASER {
                     self.next_page_action();
                 }
             }
             KEY_LEFT | KEY_UP | KEY_BACKSPACE | KEY_PAGE_UP => {
-                if mode == MODE_NORMAL {
+                if mode == MODE_NORMAL || mode == MODE_LASER {
                     self.prev_page_action();
                 }
             }
@@ -534,6 +566,43 @@ impl qobject::Session {
         self.set_pointer_y(-1.0);
     }
 
+    pub fn laser_trail_begin(mut self: Pin<&mut Self>, x: f64, y: f64) {
+        if *self.mode() != MODE_LASER {
+            return;
+        }
+        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0), Instant::now());
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.laser_trails.push(vec![pt]);
+            rust.laser_drawing = true;
+        }
+        self.sync_laser_trails();
+    }
+
+    pub fn laser_trail_add(mut self: Pin<&mut Self>, x: f64, y: f64) {
+        if !self.rust().laser_drawing || *self.mode() != MODE_LASER {
+            return;
+        }
+        let pt = (x.clamp(0.0, 1.0), y.clamp(0.0, 1.0), Instant::now());
+        if let Some(last) = self.as_mut().rust_mut().laser_trails.last_mut() {
+            // Skip near-duplicates to keep the path light.
+            if let Some(&(lx, ly, _)) = last.last() {
+                let dx = lx - pt.0;
+                let dy = ly - pt.1;
+                if dx * dx + dy * dy < 1.0e-6 {
+                    return;
+                }
+            }
+            last.push(pt);
+        }
+        self.sync_laser_trails();
+    }
+
+    pub fn laser_trail_end(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().laser_drawing = false;
+        self.sync_laser_trails();
+    }
+
     pub fn stroke_begin(mut self: Pin<&mut Self>, x: f64, y: f64) {
         if *self.mode() != MODE_PEN {
             return;
@@ -568,7 +637,8 @@ impl qobject::Session {
     }
 
     pub fn mouse_click(self: Pin<&mut Self>, button: i32) {
-        if *self.mode() != MODE_NORMAL || *self.help_visible() {
+        let mode = *self.mode();
+        if *self.help_visible() || (mode != MODE_NORMAL && mode != MODE_LASER) {
             return;
         }
         match button {
@@ -594,9 +664,17 @@ impl qobject::Session {
             _ => MODE_NORMAL,
         };
         self.as_mut().set_mode(mode);
-        self.as_mut().rust_mut().drawing = false;
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.drawing = false;
+            rust.laser_drawing = false;
+            if mode != MODE_LASER {
+                rust.laser_trails.clear();
+            }
+        }
         if mode != MODE_LASER {
-            self.pointer_hide();
+            self.as_mut().pointer_hide();
+            self.sync_laser_trails();
         }
     }
 
@@ -626,6 +704,9 @@ impl qobject::Session {
                 let cur = *self.current_page();
                 if cur == 0 && target != 0 {
                     self.as_mut().maybe_start_timer_on_leave_first(0);
+                }
+                if target != cur {
+                    self.as_mut().clear_laser_trails();
                 }
                 self.as_mut().set_current_page(target);
                 self.refresh_derived();
@@ -695,6 +776,28 @@ impl qobject::Session {
         self.set_audience_strokes_json(QString::from(&audience_json));
     }
 
+    fn clear_laser_trails(mut self: Pin<&mut Self>) {
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.laser_trails.clear();
+            rust.laser_drawing = false;
+        }
+        self.sync_laser_trails();
+    }
+
+    fn sync_laser_trails(mut self: Pin<&mut Self>) {
+        let now = Instant::now();
+        {
+            let mut rust = self.as_mut().rust_mut();
+            rust.laser_trails.retain_mut(|stroke| {
+                stroke.retain(|(_, _, t)| now.duration_since(*t) < LASER_TRAIL_TTL);
+                !stroke.is_empty()
+            });
+        }
+        let json = laser_trails_to_json(&self.rust().laser_trails, now);
+        self.set_laser_trails_json(QString::from(&json));
+    }
+
     fn update_timer_text(self: Pin<&mut Self>) {
         let mut total = self.rust().accumulated;
         if let Some(last) = self.rust().last_tick {
@@ -719,6 +822,29 @@ fn strokes_to_json(strokes: Option<&Vec<Stroke>>) -> String {
                 .iter()
                 .map(|(x, y)| json!({ "x": x, "y": y }))
                 .collect();
+            arr.push(Value::Array(pts));
+        }
+    }
+    Value::Array(arr).to_string()
+}
+
+fn laser_trails_to_json(trails: &[TimedStroke], now: Instant) -> String {
+    let ttl = LASER_TRAIL_TTL.as_secs_f64();
+    let mut arr: Vec<Value> = Vec::new();
+    for stroke in trails {
+        let pts: Vec<Value> = stroke
+            .iter()
+            .filter_map(|(x, y, t)| {
+                let age = now.duration_since(*t).as_secs_f64();
+                if age >= ttl {
+                    return None;
+                }
+                // Linear fade: full opacity when fresh, gone at TTL.
+                let a = 1.0 - (age / ttl);
+                Some(json!({ "x": x, "y": y, "a": a }))
+            })
+            .collect();
+        if pts.len() >= 2 {
             arr.push(Value::Array(pts));
         }
     }

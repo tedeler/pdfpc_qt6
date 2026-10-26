@@ -42,7 +42,8 @@ QtObject {
     }
 
     property Timer tickTimer: Timer {
-        interval: 250
+        // 50 ms keeps the laser afterglow fade smooth; the clock only needs ~1 Hz.
+        interval: 50
         running: true
         repeat: true
         onTriggered: root.session.tick()

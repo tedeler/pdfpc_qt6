@@ -80,6 +80,7 @@ ApplicationWindow {
                     pdfSource: root.ctrl.pdf_url
                     page: root.ctrl.current_page
                     strokesJson: root.ctrl.current_strokes_json
+                    laserTrailsJson: root.ctrl.laser_trails_json
                     pointerVisible: root.ctrl.pointer_visible && root.ctrl.mode === 1
                     pointerX: root.ctrl.pointer_x
                     pointerY: root.ctrl.pointer_y
@@ -210,14 +211,14 @@ ApplicationWindow {
 
     // Keep in sync with handleKey in session.rs and the README key table.
     readonly property var shortcuts: [
-        ["→  ↓  Space  Enter  Page Down", "Next slide (also left click)"],
-        ["←  ↑  Backspace  Page Up", "Previous slide (also right click)"],
+        ["→  ↓  Space  Enter  Page Down", "Next slide (also left click; laser too)"],
+        ["←  ↑  Backspace  Page Up", "Previous slide (also right click; laser too)"],
         ["Home / End", "First / last slide"],
         ["g, digits, Enter", "Go to slide"],
         ["b", "Blank audience screen"],
         ["f", "Freeze audience screen"],
         ["1", "Normal mouse"],
-        ["2", "Laser pointer"],
+        ["2", "Laser pointer (drag = afterglow trail)"],
         ["+  /  -", "Larger / smaller laser pointer"],
         ["3", "Pen"],
         ["c", "Clear drawings on this slide"],

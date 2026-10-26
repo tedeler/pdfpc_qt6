@@ -68,14 +68,14 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 
 | Key | Action |
 |---|---|
-| →, ↓, Space, Enter, Page Down / left click | Next slide (normal mode) |
-| ←, ↑, Backspace, Page Up / right click | Previous slide (normal mode) |
+| →, ↓, Space, Enter, Page Down / left click | Next slide (normal and laser mode) |
+| ←, ↑, Backspace, Page Up / right click | Previous slide (normal and laser mode) |
 | Home / End | First / last slide |
 | `g`, digits, Enter | Go to slide (1-based) |
 | `b` | Blank audience (black) |
 | `f` | Freeze audience on the current slide + strokes |
 | `1` | Normal mouse |
-| `2` | Laser pointer |
+| `2` | Laser pointer (left-drag draws a red/white afterglow trail that fades after 2s) |
 | `+` / `-` | Larger / smaller laser pointer |
 | `3` | Pen (red stroke, fixed width) |
 | `c` | Clear strokes on the current slide |
