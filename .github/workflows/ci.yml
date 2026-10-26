@@ -7,9 +7,17 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    # Target Kubuntu/Ubuntu 26.04: shlib Depends must use that release's
+    # library package names (no Ubuntu 24.04 t64 names for Qt libs).
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Show runner OS
+        run: |
+          . /etc/os-release
+          echo "PRETTY_NAME=$PRETTY_NAME"
+          echo "VERSION_ID=$VERSION_ID"
 
       - name: Install Qt 6 and build tools
         run: |
@@ -64,6 +72,20 @@ jobs:
 
       - name: Package .deb
         run: packaging/build-deb.sh dist
+
+      - name: Show .deb Depends
+        run: |
+          deb="$(ls dist/pdfpc-qt6_*.deb)"
+          echo "DEB=$deb"
+          echo -n "Depends: "
+          dpkg-deb -f "$deb" Depends
+          # Fail the job if Ubuntu 24.04-style Qt t64 deps leaked in (except
+          # packages that still use the t64 name on 26.04, e.g. libqt6core6t64).
+          deps="$(dpkg-deb -f "$deb" Depends)"
+          if echo "$deps" | grep -E 'libqt6(gui|dbus)6t64'; then
+            echo "error: Depends still contain 24.04-only Qt t64 names: $deps" >&2
+            exit 1
+          fi
 
       - name: Upload .deb artifact
         uses: actions/upload-artifact@v4

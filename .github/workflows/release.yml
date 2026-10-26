@@ -16,9 +16,16 @@ permissions:
 
 jobs:
   deb:
-    runs-on: ubuntu-24.04
+    # Match Kubuntu/Ubuntu 26.04 package names in dpkg-shlibdeps output.
+    runs-on: ubuntu-26.04
     steps:
       - uses: actions/checkout@v4
+
+      - name: Show runner OS
+        run: |
+          . /etc/os-release
+          echo "PRETTY_NAME=$PRETTY_NAME"
+          echo "VERSION_ID=$VERSION_ID"
 
       - name: Resolve version
         id: ver
@@ -66,6 +73,18 @@ jobs:
 
       - name: Package .deb
         run: packaging/build-deb.sh dist
+
+      - name: Show .deb Depends
+        run: |
+          deb="$(ls dist/pdfpc-qt6_*.deb)"
+          echo "DEB=$deb"
+          echo -n "Depends: "
+          dpkg-deb -f "$deb" Depends
+          deps="$(dpkg-deb -f "$deb" Depends)"
+          if echo "$deps" | grep -E 'libqt6(gui|dbus)6t64'; then
+            echo "error: Depends still contain 24.04-only Qt t64 names: $deps" >&2
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
