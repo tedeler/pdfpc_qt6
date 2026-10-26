@@ -12,10 +12,10 @@ export CC="${CC:-gcc}"
 export RUSTFLAGS="${RUSTFLAGS:--C linker=g++}"
 export PKG_CONFIG_PATH="${PKG_CONFIG_PATH:-/usr/lib/x86_64-linux-gnu/pkgconfig}"
 
-echo "== Rust densify / continuity unit tests =="
+echo "== Rust polyline unit tests =="
 cargo test --bin pdfpc-qt6 laser_trail -- --nocapture
 
-echo "== Qt render self-test (continuous band) =="
+echo "== Qt render self-test (white interior + red border ribbon) =="
 OUT_DIR="${PDFPC_TEST_OUT:-/tmp/pdfpc-laser-trail-test}"
 mkdir -p "$OUT_DIR"
 BIN="$OUT_DIR/test_laser_trail_geom"
