@@ -23,59 +23,61 @@ Item {
         onStatusChanged: function () {
             if (status === PdfDocument.Ready && pageCount > 0 && root.ctrl)
                 root.ctrl.applyPageCount(pageCount)
-            root.syncFrame()
+            // Remount the rasterizer once Ready so currentFrame is applied at
+            // creation time (PdfPageImage often ignores a pre-set frame).
+            if (status === PdfDocument.Ready)
+                root.bumpRaster()
         }
         onPageCountChanged: function () {
             if (status === PdfDocument.Ready && pageCount > 0 && root.ctrl)
                 root.ctrl.applyPageCount(pageCount)
-            root.syncFrame()
         }
+        onSourceChanged: root.bumpRaster()
     }
 
-    // Clamp to the loaded document so a restored page is shown once Ready.
-    readonly property int frameIndex: {
-        if (localDocument.status !== PdfDocument.Ready || localDocument.pageCount <= 0)
-            return 0
-        return Math.max(0, Math.min(root.page, localDocument.pageCount - 1))
+    function bumpRaster() {
+        // Tear down and recreate PdfPageImage so currentFrame is honored.
+        pageLoader.active = false
+        Qt.callLater(function () {
+            pageLoader.active = root.pageValid
+        })
     }
 
-    function syncFrame() {
-        if (localDocument.status !== PdfDocument.Ready || localDocument.pageCount <= 0)
-            return
-        frameNudgeTimer.restart()
+    readonly property bool pageValid: root.page >= 0
+            && localDocument.status === PdfDocument.Ready
+            && localDocument.pageCount > 0
+    readonly property int frameIndex: root.pageValid
+            ? Math.max(0, Math.min(root.page, localDocument.pageCount - 1))
+            : 0
+
+    onFrameIndexChanged: {
+        // Page changes after Ready: recreate so next-preview and restores never
+        // stick on a stale decoded frame.
+        if (root.pageValid)
+            root.bumpRaster()
     }
 
-    Timer {
-        id: frameNudgeTimer
-        interval: 50
-        repeat: false
-        onTriggered: {
-            if (localDocument.status !== PdfDocument.Ready || localDocument.pageCount <= 0)
-                return
-            var frame = root.frameIndex
-            // Nudge currentFrame so Qt PDF re-rasterizes after Ready (otherwise a
-            // restored page can stay stuck on the first decoded frame).
-            pageImage.currentFrame = frame === 0 ? 1 : 0
-            pageImage.currentFrame = frame
-        }
+    onPageValidChanged: {
+        if (root.pageValid)
+            root.bumpRaster()
+        else
+            pageLoader.active = false
     }
 
-    onPageChanged: syncFrame()
-
-    readonly property size pointSize: localDocument.status === PdfDocument.Ready
+    readonly property size pointSize: root.pageValid
                                       ? localDocument.pagePointSize(root.frameIndex)
                                       : Qt.size(4, 3)
     readonly property real fitScale: Math.min(width / Math.max(1, pointSize.width),
                                               height / Math.max(1, pointSize.height))
 
-    // Qt PDF leaves unpainted paper transparent (ARGB). PDFs that rely on the
-    // implicit white page (datasheets, many Distiller exports) would otherwise
-    // show the dark presenter/audience chrome through the slide. Match
-    // QtQuick.Pdf.PdfPageView, which is itself a white Rectangle.
-    readonly property real pageX: pageImage.x + (pageImage.width - pageImage.paintedWidth) / 2
-    readonly property real pageY: pageImage.y + (pageImage.height - pageImage.paintedHeight) / 2
-    readonly property real pageW: Math.max(1, pageImage.paintedWidth)
-    readonly property real pageH: Math.max(1, pageImage.paintedHeight)
+    readonly property real pageX: pageLoader.item
+            ? pageLoader.item.x + (pageLoader.item.width - pageLoader.item.paintedWidth) / 2
+            : 0
+    readonly property real pageY: pageLoader.item
+            ? pageLoader.item.y + (pageLoader.item.height - pageLoader.item.paintedHeight) / 2
+            : 0
+    readonly property real pageW: pageLoader.item ? Math.max(1, pageLoader.item.paintedWidth) : 1
+    readonly property real pageH: pageLoader.item ? Math.max(1, pageLoader.item.paintedHeight) : 1
 
     Rectangle {
         id: paper
@@ -84,29 +86,34 @@ Item {
         width: root.pageW
         height: root.pageH
         color: "#ffffff"
-        visible: pageImage.visible
+        visible: pageLoader.item && pageLoader.item.visible && pageLoader.item.paintedWidth > 0
         z: 0
     }
 
-    PdfPageImage {
-        id: pageImage
+    Loader {
+        id: pageLoader
         anchors.fill: parent
-        document: localDocument
-        currentFrame: 0
-        fillMode: Image.PreserveAspectFit
-        // Without sourceSize Qt PDF rasterizes at the page size in points
-        // (~360 px wide for Beamer), which is blurry when scaled to a screen.
-        // Qt PDF renders exactly to sourceSize, so it must keep the page aspect.
-        sourceSize.width: Math.max(1, Math.round(root.pointSize.width * root.fitScale * Screen.devicePixelRatio))
-        sourceSize.height: Math.max(1, Math.round(root.pointSize.height * root.fitScale * Screen.devicePixelRatio))
-        asynchronous: true
-        visible: root.page >= 0 && localDocument.status === PdfDocument.Ready
+        active: false
+        sourceComponent: pageComponent
         z: 1
+    }
 
-        // retainWhileLoading is Qt 6.5+; set when the property exists.
-        Component.onCompleted: {
-            if ("retainWhileLoading" in pageImage)
-                pageImage.retainWhileLoading = true
+    Component {
+        id: pageComponent
+        PdfPageImage {
+            anchors.fill: parent
+            document: localDocument
+            currentFrame: root.frameIndex
+            fillMode: Image.PreserveAspectFit
+            sourceSize.width: Math.max(1, Math.round(root.pointSize.width * root.fitScale * Screen.devicePixelRatio))
+            sourceSize.height: Math.max(1, Math.round(root.pointSize.height * root.fitScale * Screen.devicePixelRatio))
+            asynchronous: false
+            visible: status === Image.Ready && paintedWidth > 0
+
+            Component.onCompleted: {
+                if ("retainWhileLoading" in this)
+                    retainWhileLoading = true
+            }
         }
     }
 
@@ -122,7 +129,7 @@ Item {
         pointerX: root.pointerX
         pointerY: root.pointerY
         pointerSize: root.ctrl.pointer_size
-        visible: root.page >= 0
+        visible: root.pageValid && paper.visible
         z: 2
     }
 
@@ -131,14 +138,11 @@ Item {
         enabled: root.interactive
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: root.interactive && root.ctrl.mode === 1
-        // The laser dot replaces the mouse cursor over the slide.
         cursorShape: root.ctrl.mode === 1 ? Qt.BlankCursor : Qt.ArrowCursor
 
-        // Distinguishes a slide-change click from a laser afterglow drag.
         property real pressX: 0
         property real pressY: 0
         property bool laserDragged: false
-        // ~1.2% of the page diagonal as movement threshold.
         readonly property real clickSlop: 0.012
 
         function toPage(mx, my) {

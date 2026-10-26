@@ -321,6 +321,8 @@ impl qobject::Session {
             rust.pending_page = Some(restore_page);
             rust.strokes.clear();
             rust.drawing = false;
+            rust.laser_trails.clear();
+            rust.laser_drawing = false;
             rust.timer_started = false;
             rust.timer_paused_flag = false;
             rust.accumulated = Duration::ZERO;
