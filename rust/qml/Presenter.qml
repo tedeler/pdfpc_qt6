@@ -27,6 +27,10 @@ ApplicationWindow {
         title: qsTr("About pdfpc-qt6")
         modal: true
         anchors.centerIn: Overlay.overlay
+        // Pin size so org.kde.breeze Dialog.qml does not bind
+        // implicitWidth ↔ contentItem in a loop.
+        implicitWidth: 360
+        width: Math.min(implicitWidth, Overlay.overlay ? Overlay.overlay.width - 48 : implicitWidth)
         standardButtons: Dialog.Ok
         onClosed: focusScope.forceActiveFocus()
 
