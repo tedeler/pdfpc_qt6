@@ -194,27 +194,39 @@ Item {
     Component {
         id: pageComponent
         PdfPageImage {
+            // Freeze wantedFrame at remount; guard parent (null during Loader teardown).
+            readonly property int wantedFrame: parent ? parent.wantedFrame : 0
+
             // parent is the Loader that created this item.
             anchors.fill: parent
             document: localDocument
             // Freeze the frame at remount time so the back buffer does not jump
             // when root.frameIndex advances again mid-decode.
-            currentFrame: parent.wantedFrame
+            currentFrame: wantedFrame
             fillMode: Image.PreserveAspectFit
             sourceSize.width: Math.max(1, Math.round(root.pointSize.width * root.fitScale * Screen.devicePixelRatio))
             sourceSize.height: Math.max(1, Math.round(root.pointSize.height * root.fitScale * Screen.devicePixelRatio))
             asynchronous: false
             visible: status === Image.Ready && paintedWidth > 0
 
+            function notifySlotReady() {
+                // status/paintedWidth can fire while the Loader is tearing down
+                // (active=false); parent is already null then.
+                var loader = parent
+                if (!loader)
+                    return
+                root.onSlotReady(loader.slotIndex)
+            }
+
             Component.onCompleted: {
                 if ("retainWhileLoading" in this)
                     retainWhileLoading = true
                 // Loader.Ready can fire before Image.Ready; re-check promote.
-                root.onSlotReady(parent.slotIndex)
+                notifySlotReady()
             }
 
-            onStatusChanged: root.onSlotReady(parent.slotIndex)
-            onPaintedWidthChanged: root.onSlotReady(parent.slotIndex)
+            onStatusChanged: notifySlotReady()
+            onPaintedWidthChanged: notifySlotReady()
         }
     }
 
