@@ -239,7 +239,7 @@ ApplicationWindow {
         ["b", "Blank audience screen"],
         ["f", "Freeze audience screen"],
         ["1", "Normal mouse"],
-        ["2", "Laser pointer (drag = afterglow trail)"],
+        ["2", "Laser pointer (drag = soft red afterglow)"],
         ["+  /  -", "Larger / smaller laser pointer"],
         ["3", "Pen"],
         ["c", "Clear drawings on this slide"],

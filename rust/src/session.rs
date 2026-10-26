@@ -192,8 +192,9 @@ const KEY_A: i32 = 0x41;
 const KEY_Z: i32 = 0x5a;
 
 /// Laser pointer radius as a fraction of the slide height.
-const POINTER_SIZE_DEFAULT: f64 = 0.022;
-const POINTER_SIZE_MIN: f64 = 0.008;
+/// Default is ~1/3 of the earlier 0.022 size so the tip matches a fine laser.
+const POINTER_SIZE_DEFAULT: f64 = 0.022 / 3.0;
+const POINTER_SIZE_MIN: f64 = 0.003;
 const POINTER_SIZE_MAX: f64 = 0.08;
 const POINTER_SIZE_STEP: f64 = 1.25;
 

@@ -117,9 +117,14 @@ public:
             }
         }
 
-        // Laser afterglow: white outline, red core; opacity from each point's age.
-        const qreal coreWidth = qMax<qreal>(2.5, m_pointerSize * h * 0.55);
-        const qreal outlineWidth = coreWidth + qMax<qreal>(2.0, coreWidth * 0.55);
+        // Laser afterglow: soft red glow with a thin bright white core
+        // (reference look: translucent red halo, not a hard white outline).
+        const qreal base = qMax<qreal>(1.2, m_pointerSize * h);
+        const qreal glowOuter = base * 5.5;
+        const qreal glowMid = base * 3.2;
+        const qreal glowInner = base * 1.8;
+        const qreal coreWidth = qMax<qreal>(1.0, base * 0.55);
+        painter->setBrush(Qt::NoBrush);
         for (const auto &stroke : m_laserTrails) {
             if (stroke.size() < 2)
                 continue;
@@ -132,12 +137,22 @@ public:
                 const QPointF a(pa.x * w, pa.y * h);
                 const QPointF b(pb.x * w, pb.y * h);
 
-                QPen outline(QColor(255, 255, 255, int(230 * alpha)), outlineWidth,
-                             Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-                painter->setPen(outline);
+                QPen outer(QColor(255, 0, 0, int(55 * alpha)), glowOuter,
+                           Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter->setPen(outer);
                 painter->drawLine(a, b);
 
-                QPen core(QColor(220, 30, 30, int(255 * alpha)), coreWidth,
+                QPen mid(QColor(255, 20, 20, int(110 * alpha)), glowMid,
+                         Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter->setPen(mid);
+                painter->drawLine(a, b);
+
+                QPen inner(QColor(255, 60, 60, int(180 * alpha)), glowInner,
+                           Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+                painter->setPen(inner);
+                painter->drawLine(a, b);
+
+                QPen core(QColor(255, 255, 255, int(245 * alpha)), coreWidth,
                           Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
                 painter->setPen(core);
                 painter->drawLine(a, b);
@@ -147,12 +162,14 @@ public:
         if (m_pointerVisible && m_pointerX >= 0.0 && m_pointerY >= 0.0
             && m_pointerX <= 1.0 && m_pointerY <= 1.0) {
             const QPointF c(m_pointerX * w, m_pointerY * h);
-            const qreal r = qMax<qreal>(3.0, m_pointerSize * h);
-            const qreal glow = r * 2.2;
+            const qreal r = qMax<qreal>(2.0, m_pointerSize * h);
+            const qreal glow = r * 3.0;
+            // Soft red halo with a hot white center, matching the trail tip.
             QRadialGradient gradient(c, glow);
-            gradient.setColorAt(0.0, QColor(255, 40, 40, 235));
-            gradient.setColorAt(r / glow * 0.75, QColor(255, 30, 30, 200));
-            gradient.setColorAt(r / glow, QColor(255, 0, 0, 110));
+            gradient.setColorAt(0.0, QColor(255, 255, 255, 255));
+            gradient.setColorAt(0.12, QColor(255, 220, 220, 240));
+            gradient.setColorAt(0.28, QColor(255, 40, 40, 210));
+            gradient.setColorAt(0.55, QColor(255, 0, 0, 120));
             gradient.setColorAt(1.0, QColor(255, 0, 0, 0));
             painter->setPen(Qt::NoPen);
             painter->setBrush(gradient);
@@ -226,5 +243,5 @@ private:
     bool m_pointerVisible = false;
     qreal m_pointerX = -1.0;
     qreal m_pointerY = -1.0;
-    qreal m_pointerSize = 0.022;
+    qreal m_pointerSize = 0.022 / 3.0;
 };
