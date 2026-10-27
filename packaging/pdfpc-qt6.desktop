@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=pdfpc-qt6
+GenericName=PDF Presenter
+GenericName[de]=PDF-Präsentation
+Comment=Slim dual-monitor PDF presenter
+Comment[de]=Schlanker PDF-Presenter für zwei Bildschirme
+Exec=/usr/bin/pdfpc-qt6 %f
+Icon=pdfpc-qt6
+Terminal=false
+Categories=Office;Presentation;
+Keywords=pdf;presenter;presentation;slides;
+MimeType=application/pdf;
+StartupNotify=true
+StartupWMClass=pdfpc-qt6

@@ -5,6 +5,10 @@ pub mod qobject {
     unsafe extern "C++" {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+
+        include!("cpp/app_identity.h");
+        fn configure_app_identity();
+        fn apply_window_icons();
     }
 
     extern "RustQt" {
@@ -155,6 +159,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "configureWindowed"]
         fn configure_windowed(self: Pin<&mut Self>, windowed: bool);
+
+        #[qinvokable]
+        #[cxx_name = "applyWindowIcons"]
+        fn refresh_window_icons(self: Pin<&mut Self>);
     }
 }
 
@@ -782,6 +790,10 @@ impl qobject::Session {
 
     pub fn configure_windowed(self: Pin<&mut Self>, windowed: bool) {
         self.set_windowed(windowed);
+    }
+
+    pub fn refresh_window_icons(self: Pin<&mut Self>) {
+        qobject::apply_window_icons();
     }
 
     fn scale_pointer(self: Pin<&mut Self>, factor: f64) {

@@ -168,6 +168,7 @@ QtObject {
             fullScreenTimer.start()
         presenterWindow.raise()
         presenterWindow.requestActivate()
+        session.applyWindowIcons()
     }
 
     function enterFullScreen() {
@@ -189,6 +190,7 @@ QtObject {
         }
         presenterWindow.raise()
         presenterWindow.requestActivate()
+        session.applyWindowIcons()
     }
 
     function movePresenterWithKWin(screen) {
@@ -205,6 +207,7 @@ QtObject {
         showPresenterCentered(screenAt(session.presenter_screen))
         presenterWindow.raise()
         presenterWindow.requestActivate()
+        session.applyWindowIcons()
     }
 
     Component.onCompleted: {

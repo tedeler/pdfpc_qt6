@@ -9,7 +9,8 @@ ApplicationWindow {
     id: root
     required property var ctrl
 
-    title: "pdfpc-qt6 — presenter"
+    // app_version is read from ../VERSION at build time (PDFPC_VERSION).
+    title: "pdfpc-qt6 " + ctrl.app_version + " — presenter"
     color: "#1a1a1a"
 
     menuBar: MenuBar {

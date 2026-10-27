@@ -39,14 +39,14 @@ packaging/build-deb.sh
 # → dist/pdfpc-qt6_<version>_<arch>.deb
 ```
 
-Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`):
+Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`). The package installs `/usr/share/applications/pdfpc-qt6.desktop` and a hicolor icon named `pdfpc-qt6`, so the application shows up in the KDE start menu. Presenter and audience window titles include the version read from [`VERSION`](VERSION) at build time.
 
 ```bash
-sudo apt install ./pdfpc-qt6_1.02_amd64.deb
-# or: sudo dpkg -i pdfpc-qt6_1.02_amd64.deb
+sudo apt install ./pdfpc-qt6_1.03_amd64.deb
+# or: sudo dpkg -i pdfpc-qt6_1.03_amd64.deb
 ```
 
-CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v1.02`) additionally publishes a GitHub Release with the same package.
+CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v1.03`) additionally publishes a GitHub Release with the same package.
 
 ## Usage
 
