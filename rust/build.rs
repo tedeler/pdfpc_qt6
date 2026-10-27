@@ -18,8 +18,13 @@ fn main() {
     .files(["src/session.rs"])
     .cpp_file("cpp/ink_canvas.h")
     .cpp_file("cpp/kwin_placer.h")
+    // Embedded window icon. With the QML module this lands at
+    // :/qt/qml/org/pdfpc/app/icons/pdfpc-qt6.png
+    .qrc_resources(["icons/pdfpc-qt6.png"])
     .build();
 
+    println!("cargo:rerun-if-changed=cpp/app_identity.h");
+    println!("cargo:rerun-if-changed=icons/pdfpc-qt6.png");
     println!("cargo:rerun-if-changed=cpp/laser_trail_geom.h");
     println!("cargo:rerun-if-changed=cpp/test_laser_trail_geom.cpp");
 

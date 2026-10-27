@@ -7,7 +7,8 @@ Window {
     id: root
     required property var ctrl
 
-    title: "pdfpc-qt6 — audience"
+    // app_version is read from ../VERSION at build time (PDFPC_VERSION).
+    title: "pdfpc-qt6 " + ctrl.app_version + " — audience"
     color: "#000000"
 
     Item {

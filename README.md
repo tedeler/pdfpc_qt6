@@ -39,7 +39,7 @@ packaging/build-deb.sh
 # → dist/pdfpc-qt6_<version>_<arch>.deb
 ```
 
-Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`):
+Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`). The package installs `/usr/share/applications/pdfpc-qt6.desktop` and a hicolor icon named `pdfpc-qt6`, so the application shows up in the KDE start menu. Presenter and audience window titles include the version read from [`VERSION`](VERSION) at build time.
 
 ```bash
 sudo apt install ./pdfpc-qt6_1.02_amd64.deb
