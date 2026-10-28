@@ -86,6 +86,10 @@ pub mod qobject {
         fn toggle_freeze(self: Pin<&mut Self>);
 
         #[qinvokable]
+        #[cxx_name = "jumpToFrozen"]
+        fn jump_to_frozen(self: Pin<&mut Self>);
+
+        #[qinvokable]
         #[cxx_name = "exitState"]
         fn exit_state(self: Pin<&mut Self>);
 
@@ -492,6 +496,24 @@ impl qobject::Session {
         }
     }
 
+    /// While frozen, jump the presenter view back to the audience (frozen) page.
+    pub fn jump_to_frozen(mut self: Pin<&mut Self>) {
+        if !*self.frozen() {
+            return;
+        }
+        let target = *self.audience_page();
+        let cur = *self.current_page();
+        if target == cur {
+            return;
+        }
+        if cur == 0 && target != 0 {
+            self.as_mut().maybe_start_timer_on_leave_first(0);
+        }
+        self.as_mut().clear_laser_trails();
+        self.as_mut().set_current_page(target);
+        self.refresh_derived();
+    }
+
     pub fn exit_state(mut self: Pin<&mut Self>) {
         if *self.goto_active() {
             self.cancel_goto();
@@ -643,6 +665,10 @@ impl qobject::Session {
         }
         if ctrl && key == KEY_RIGHT {
             self.history_forward();
+            return;
+        }
+        if ctrl && key_letter(key) == Some('g') {
+            self.jump_to_frozen();
             return;
         }
 

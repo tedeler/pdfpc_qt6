@@ -77,6 +77,7 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | Click PDF link | Jump to linked page (e.g. Beamer TOC); pushes history |
 | Ctrl+← | History back (undo jump; last 100 jumps) |
 | Ctrl+→ | History forward |
+| Ctrl+G | While frozen: jump presenter to the frozen audience page |
 | `b` | Blank audience (black) |
 | `f` | Freeze audience on the current slide + strokes |
 | `1` | Normal mouse |
@@ -110,7 +111,7 @@ Check against Poppler/Evince using the Beamer decks in `demo/` (see `demo/README
 
 1. Open `demo/pdfpc-demo.pdf` on Kubuntu with two displays.
 2. Confirm presenter (current + next + page + timer) vs audience (current only).
-3. Navigate, `Shift+S`, blank (`b`), freeze (`f`), goto (`g`), laser (`2`), pen (`3`/`c`).
+3. Navigate, `Shift+S`, blank (`b`), freeze (`f`), Ctrl+G (jump to frozen), goto (`g`), laser (`2`), pen (`3`/`c`).
 4. If a window lands on the wrong screen under Wayland, report it — placement uses `Window.screen` + fullscreen; a KWin script can be added as a fallback.
 
 ## License

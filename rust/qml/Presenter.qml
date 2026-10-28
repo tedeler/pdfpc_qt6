@@ -244,6 +244,7 @@ ApplicationWindow {
         ["Click PDF link", "Jump to linked slide (e.g. Beamer TOC)"],
         ["Ctrl+←", "History back (undo jump)"],
         ["Ctrl+→", "History forward"],
+        ["Ctrl+G", "Jump to frozen page (while frozen)"],
         ["b", "Blank audience screen"],
         ["f", "Freeze audience screen"],
         ["1", "Normal mouse"],
