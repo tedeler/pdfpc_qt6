@@ -82,12 +82,25 @@ Item {
                 && front.paintedWidth > 0) {
             return
         }
+        var back = 1 - root.frontSlot
+        var backLoader = back === 0 ? slot0 : slot1
+        // Shift+←/→ often returns to a page still sitting in the back slot.
+        // Remounting that same frame into the slot can fail to promote; flip
+        // the front pointer instead so the cached raster shows immediately.
+        if (!forceFront && backLoader.active && backLoader.item
+                && backLoader.wantedFrame === frame
+                && backLoader.item.currentFrame === frame
+                && backLoader.item.status === Image.Ready
+                && backLoader.item.paintedWidth > 0) {
+            backLoader.seq = root.loadSeq
+            root.frontSlot = back
+            return
+        }
         // An in-flight load (e.g. hardReset) already targets this frame.
         if ((slot0.seq === root.loadSeq && slot0.wantedFrame === frame)
                 || (slot1.seq === root.loadSeq && slot1.wantedFrame === frame)) {
             return
         }
-        var back = 1 - root.frontSlot
         root.loadSeq += 1
         root.loadIntoSlot(back, frame, root.loadSeq, true)
     }

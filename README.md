@@ -72,6 +72,7 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 |---|---|
 | →, ↓, Space, Enter, Page Down / left click | Next slide (normal and laser mode) |
 | ←, ↑, Backspace, Page Up / right click | Previous slide (normal and laser mode) |
+| Shift+→ / Shift+← | Jump forward / back 10 slides |
 | Home / End | First / last slide |
 | `g`, digits, Enter | Go to slide (1-based); pushes jump history |
 | Click PDF link | Jump to linked page (e.g. Beamer TOC); pushes history |
