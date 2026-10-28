@@ -9,6 +9,9 @@ ApplicationWindow {
     id: root
     required property var ctrl
 
+    // Created at startup, but it does not contact GitHub until the menu entry.
+    property Updater updater: Updater {}
+
     // app_version is read from ../VERSION at build time (PDFPC_VERSION).
     title: "pdfpc-qt6 " + ctrl.app_version + " — presenter"
     color: "#1a1a1a"
@@ -19,6 +22,17 @@ ApplicationWindow {
             Action {
                 text: qsTr("&About pdfpc-qt6")
                 onTriggered: aboutDialog.open()
+            }
+            Action {
+                text: qsTr("Check for &updates…")
+                onTriggered: {
+                    updateDialog.open()
+                    updater.checkForUpdates()
+                }
+            }
+            Action {
+                text: qsTr("pdfpc-qt6 on &GitHub")
+                onTriggered: Qt.openUrlExternally("https://github.com/tedeler/pdfpc_qt6")
             }
         }
     }
@@ -54,6 +68,62 @@ ApplicationWindow {
             Label {
                 text: "GPL-3.0-or-later"
                 color: palette.placeholderText
+            }
+        }
+    }
+
+    Dialog {
+        id: updateDialog
+        title: qsTr("Check for updates")
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        // Pin size so org.kde.breeze Dialog.qml does not bind
+        // implicitWidth ↔ contentItem in a loop.
+        implicitWidth: 460
+        implicitHeight: 420
+        width: Math.min(implicitWidth, Overlay.overlay ? Overlay.overlay.width - 48 : implicitWidth)
+        standardButtons: updater.busy ? Dialog.NoButton : Dialog.Close
+        closePolicy: updater.busy ? Popup.NoAutoClose : Popup.CloseOnEscape | Popup.CloseOnPressOutside
+        onClosed: focusScope.forceActiveFocus()
+
+        contentItem: Column {
+            width: 420
+            spacing: 10
+
+            BusyIndicator {
+                running: updater.busy
+                visible: updater.busy
+                width: 24
+                height: 24
+            }
+            Label {
+                width: 420
+                wrapMode: Text.WordWrap
+                text: updater.message
+            }
+            Label {
+                text: qsTr("Current version: %1").arg(updater.current_version)
+            }
+            Label {
+                text: qsTr("Latest version: %1").arg(updater.latest_version === "" ? "—" : updater.latest_version)
+            }
+            Label {
+                width: 420
+                wrapMode: Text.WordWrap
+                color: palette.placeholderText
+                visible: updater.update_available
+                text: qsTr("The package is downloaded and installed only after you click the button. pdfpc-qt6 asks for permission, then restarts.")
+            }
+            Button {
+                // Not a dialog accept button: opening the dialog must not install.
+                visible: updater.update_available && !updater.busy
+                text: qsTr("Install and restart")
+                onClicked: updater.installUpdate()
+            }
+            Button {
+                visible: !updater.busy && (updater.phase === "ready" || updater.phase === "error")
+                text: qsTr("Check again")
+                onClicked: updater.checkForUpdates()
             }
         }
     }

@@ -15,7 +15,7 @@ fn main() {
     .qt_module("Quick")
     .qt_module("Pdf")
     .qt_module("DBus")
-    .files(["src/session.rs"])
+    .files(["src/session.rs", "src/update.rs"])
     .cpp_file("cpp/ink_canvas.h")
     .cpp_file("cpp/kwin_placer.h")
     // Embedded window icon. With the QML module this lands at

@@ -4,6 +4,7 @@ mod laser_trail;
 mod nav_history;
 mod recent;
 mod session;
+mod update;
 
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QUrl};
 
