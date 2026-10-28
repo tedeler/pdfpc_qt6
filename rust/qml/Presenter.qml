@@ -242,8 +242,8 @@ ApplicationWindow {
         ["Shift+→ / Shift+←", "Jump forward / back 10 slides"],
         ["Home / End", "First / last slide"],
         ["g, digits, Enter", "Go to slide (history if dwell ≥5s)"],
-        ["Click PDF link", "Jump to linked slide (e.g. Beamer TOC)"],
-        ["Ctrl+←", "History back (undo jump)"],
+        ["Click PDF link", "Jump to linked slide (history if dwell ≥5s)"],
+        ["Ctrl+←", "History back"],
         ["Ctrl+→", "History forward"],
         ["j", "Jump-history list; 1–9 pick a target"],
         ["Ctrl+G", "Jump to frozen page (while frozen)"],
@@ -393,7 +393,7 @@ ApplicationWindow {
                 Text {
                     id: historyHint
                     visible: root.historyEntries.length === 0
-                    text: "No jump targets yet.\nStay ≥5s on a slide, then jump (link / g)."
+                    text: "No jump targets yet.\nStay ≥5s on a slide, then leave it\n(arrow, link, or g)."
                     color: "#a0a0a0"
                     font.pixelSize: historyFont.fontSize
                     wrapMode: Text.WordWrap
