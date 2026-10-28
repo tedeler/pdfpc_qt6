@@ -73,7 +73,10 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | →, ↓, Space, Enter, Page Down / left click | Next slide (normal and laser mode) |
 | ←, ↑, Backspace, Page Up / right click | Previous slide (normal and laser mode) |
 | Home / End | First / last slide |
-| `g`, digits, Enter | Go to slide (1-based) |
+| `g`, digits, Enter | Go to slide (1-based); pushes jump history |
+| Click PDF link | Jump to linked page (e.g. Beamer TOC); pushes history |
+| Ctrl+← | History back (undo jump; last 100 jumps) |
+| Ctrl+→ | History forward |
 | `b` | Blank audience (black) |
 | `f` | Freeze audience on the current slide + strokes |
 | `1` | Normal mouse |
@@ -95,7 +98,7 @@ Timer starts when you leave page 1, or with `s` (needed again after Ctrl+T reset
 
 ## Out of scope
 
-`pdfpcrc`, sidecars, notes, overlays, overview, movies, links, transitions, REST, QR, D-Bus remote control, eraser, pen colors, undo, persistent drawings (ink), Windows.
+`pdfpcrc`, sidecars, notes, overlays, overview, movies, external URL links, transitions, REST, QR, D-Bus remote control, eraser, pen colors, undo, persistent drawings (ink), Windows.
 
 ## PDF rendering
 
