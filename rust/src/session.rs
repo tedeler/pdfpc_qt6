@@ -246,6 +246,17 @@ const LASER_TRAIL_TTL: Duration = Duration::from_secs(2);
 const SHIFT_MODIFIER: i32 = 0x0200_0000;
 const CTRL_MODIFIER: i32 = 0x0400_0000;
 
+/// How a page leave interacts with jump history.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LeaveKind {
+    /// Link / go-to / Home / End / picker — clear forward even without dwell.
+    Explicit,
+    /// Next/prev / Shift±10 — record only after dwell; keep forward otherwise.
+    Step,
+    /// Ctrl+←/→ history walk — never push_jump here (stacks handled separately).
+    History,
+}
+
 type Point = (f64, f64);
 type Stroke = Vec<Point>;
 
@@ -472,7 +483,8 @@ impl qobject::Session {
 
     /// Move by `delta` slides (negative = back). Clamps to the document.
     /// Matches classic pdfpc Shift+←/→ (±10) and plain ←/→ (±1).
-    fn jump_pages(mut self: Pin<&mut Self>, delta: i32) {
+    /// After a ≥5s dwell, the left page is recorded in jump history.
+    fn jump_pages(self: Pin<&mut Self>, delta: i32) {
         if delta == 0 {
             return;
         }
@@ -489,26 +501,17 @@ impl qobject::Session {
         let Some(target) = page_after_jump(cur, count, delta) else {
             return;
         };
-        if delta > 0 {
-            self.as_mut().maybe_start_timer_on_leave_first(cur);
-        }
-        self.as_mut().clear_laser_trails();
-        self.as_mut().set_current_page(target);
-        self.refresh_derived();
+        self.go_to_page(target, LeaveKind::Step);
     }
 
-    pub fn goto_first(mut self: Pin<&mut Self>) {
-        self.as_mut().clear_laser_trails();
-        self.as_mut().set_current_page(0);
-        self.refresh_derived();
+    pub fn goto_first(self: Pin<&mut Self>) {
+        self.go_to_page(0, LeaveKind::Explicit);
     }
 
-    pub fn goto_last(mut self: Pin<&mut Self>) {
+    pub fn goto_last(self: Pin<&mut Self>) {
         let count = *self.page_count();
         if count > 0 {
-            self.as_mut().clear_laser_trails();
-            self.as_mut().set_current_page(count - 1);
-            self.refresh_derived();
+            self.go_to_page(count - 1, LeaveKind::Explicit);
         }
     }
 
@@ -532,21 +535,12 @@ impl qobject::Session {
     }
 
     /// While frozen, jump the presenter view back to the audience (frozen) page.
-    pub fn jump_to_frozen(mut self: Pin<&mut Self>) {
+    pub fn jump_to_frozen(self: Pin<&mut Self>) {
         if !*self.frozen() {
             return;
         }
         let target = *self.audience_page();
-        let cur = *self.current_page();
-        if target == cur {
-            return;
-        }
-        if cur == 0 && target != 0 {
-            self.as_mut().maybe_start_timer_on_leave_first(0);
-        }
-        self.as_mut().clear_laser_trails();
-        self.as_mut().set_current_page(target);
-        self.refresh_derived();
+        self.go_to_page(target, LeaveKind::Explicit);
     }
 
     pub fn exit_state(mut self: Pin<&mut Self>) {
@@ -683,13 +677,15 @@ impl qobject::Session {
 
         // While the help is shown only h / Escape / F3 do anything.
         if *self.help_visible() {
-            match (key, ch) {
-                (KEY_ESCAPE, _) | (_, Some('h' | 'H')) => self.set_help_visible(false),
-                (KEY_F3, _) => {
-                    self.as_mut().set_help_visible(false);
-                    self.show_recent();
-                }
-                _ => {}
+            let letter = ch
+                .filter(|c| c.is_ascii_alphabetic())
+                .map(|c| c.to_ascii_lowercase())
+                .or_else(|| key_letter(key));
+            if key == KEY_ESCAPE || letter == Some('h') {
+                self.set_help_visible(false);
+            } else if key == KEY_F3 {
+                self.as_mut().set_help_visible(false);
+                self.show_recent();
             }
             return;
         }
@@ -755,16 +751,26 @@ impl qobject::Session {
             KEY_END => self.goto_last(),
             KEY_ESCAPE => self.exit_state(),
             _ => {
-                if let Some(ch) = text_str.chars().next() {
+                // Prefer event text; fall back to Qt key codes so shortcuts still
+                // work when the platform delivers empty text (seen on some Wayland IMEs).
+                let letter = ch
+                    .filter(|c| c.is_ascii_alphabetic())
+                    .map(|c| c.to_ascii_lowercase())
+                    .or_else(|| key_letter(key));
+                if let Some(letter) = letter {
+                    match letter {
+                        'b' => self.toggle_blank(),
+                        'f' => self.toggle_freeze(),
+                        'g' => self.begin_goto(),
+                        'c' => self.clear_drawings(),
+                        'p' => self.toggle_pause(),
+                        's' => self.start_timer(),
+                        'h' => self.set_help_visible(true),
+                        'j' => self.toggle_history(),
+                        _ => {}
+                    }
+                } else if let Some(ch) = ch {
                     match ch {
-                        'b' | 'B' => self.toggle_blank(),
-                        'f' | 'F' => self.toggle_freeze(),
-                        'g' | 'G' => self.begin_goto(),
-                        'c' | 'C' => self.clear_drawings(),
-                        'p' | 'P' => self.toggle_pause(),
-                        's' | 'S' => self.start_timer(),
-                        'h' | 'H' => self.set_help_visible(true),
-                        'j' | 'J' => self.toggle_history(),
                         '1' => self.set_mode_internal(MODE_NORMAL),
                         '2' => self.set_mode_internal(MODE_LASER),
                         '3' => self.set_mode_internal(MODE_PEN),
@@ -1015,30 +1021,18 @@ impl qobject::Session {
         }
     }
 
-    /// Explicit jump (link / go-to / history picker): maybe push history, then show `target`.
-    /// The left page is recorded only after a ≥5s dwell (see [`history_dwell`]).
-    fn jump_to_page(mut self: Pin<&mut Self>, target: i32) {
-        let count = *self.page_count();
-        if count <= 0 || target < 0 || target >= count {
-            return;
-        }
-        let cur = *self.current_page();
-        if target == cur {
-            return;
-        }
-        if self.record_current_for_history() {
-            self.as_mut().rust_mut().nav_history.push_jump(cur);
-        } else {
-            self.as_mut().rust_mut().nav_history.clear_forward();
-        }
-        self.as_mut().maybe_start_timer_on_leave_first(cur);
-        self.as_mut().clear_laser_trails();
-        self.as_mut().set_current_page(target);
-        self.refresh_derived();
+    /// Explicit jump (link / go-to / history picker).
+    fn jump_to_page(self: Pin<&mut Self>, target: i32) {
+        self.go_to_page(target, LeaveKind::Explicit);
     }
 
     /// Apply a page from Back/Forward without pushing a new jump entry.
-    fn apply_history_page(mut self: Pin<&mut Self>, target: i32) {
+    fn apply_history_page(self: Pin<&mut Self>, target: i32) {
+        self.go_to_page(target, LeaveKind::History);
+    }
+
+    /// Navigate to `target`, optionally recording the left page after a ≥5s dwell.
+    fn go_to_page(mut self: Pin<&mut Self>, target: i32, kind: LeaveKind) {
         let count = *self.page_count();
         if count <= 0 || target < 0 || target >= count {
             return;
@@ -1046,6 +1040,18 @@ impl qobject::Session {
         let cur = *self.current_page();
         if target == cur {
             return;
+        }
+        match kind {
+            LeaveKind::History => {}
+            LeaveKind::Explicit | LeaveKind::Step => {
+                if self.record_current_for_history() {
+                    self.as_mut().rust_mut().nav_history.push_jump(cur);
+                } else if kind == LeaveKind::Explicit {
+                    // New explicit jump abandons the forward stack even if the
+                    // short stop itself is not recorded.
+                    self.as_mut().rust_mut().nav_history.clear_forward();
+                }
+            }
         }
         self.as_mut().maybe_start_timer_on_leave_first(cur);
         self.as_mut().clear_laser_trails();
@@ -1058,21 +1064,22 @@ impl qobject::Session {
     }
 
     fn handle_history_picker_key(mut self: Pin<&mut Self>, key: i32, ch: Option<char>) {
-        match (key, ch) {
-            (KEY_ESCAPE, _) | (_, Some('j' | 'J')) => {
-                self.hide_history();
-            }
-            _ => {
-                let digit = history_picker_digit(key, ch);
-                if let Some(digit) = digit {
-                    if (1..=HISTORY_PICKER_MAX).contains(&digit) {
-                        let idx = digit - 1;
-                        let targets = self.rust().nav_history.picker_targets(HISTORY_PICKER_MAX);
-                        if let Some(&page) = targets.get(idx) {
-                            self.as_mut().hide_history();
-                            self.jump_to_page(page);
-                        }
-                    }
+        let letter = ch
+            .filter(|c| c.is_ascii_alphabetic())
+            .map(|c| c.to_ascii_lowercase())
+            .or_else(|| key_letter(key));
+        if key == KEY_ESCAPE || letter == Some('j') {
+            self.hide_history();
+            return;
+        }
+        let digit = history_picker_digit(key, ch);
+        if let Some(digit) = digit {
+            if (1..=HISTORY_PICKER_MAX).contains(&digit) {
+                let idx = digit - 1;
+                let targets = self.rust().nav_history.picker_targets(HISTORY_PICKER_MAX);
+                if let Some(&page) = targets.get(idx) {
+                    self.as_mut().hide_history();
+                    self.jump_to_page(page);
                 }
             }
         }
