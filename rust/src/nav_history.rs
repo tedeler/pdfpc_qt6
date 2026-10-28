@@ -1,14 +1,18 @@
-//! Browser-style navigation history for PDF jumps (links, go-to, J-menu).
+//! Browser-style navigation history for PDF jumps.
 //!
 //! The trail is a line with a cursor, stored as a back stack plus a forward
-//! tail. Going back or forward only moves along that line. A new jump (link,
-//! go-to, or a pick from the J-menu) truncates the forward tail and continues
-//! from the current position — it does not wipe the pages already behind you.
+//! tail. Going back or forward only moves along that line. A new jump (a PDF
+//! link, go-to, or a pick from the J-menu) truncates the forward tail and
+//! continues from the current position — it does not wipe the pages already
+//! behind you.
 //!
-//! Ordinary next/prev slide moves do not push history. A page is recorded on
-//! a new jump only when the caller says the dwell threshold was met.
+//! A page is added to the stack only when the caller records it: go-to, a PDF
+//! link, or the explicit store key. Sequential paging does not. Walking the
+//! trail still parks the page you leave on the other side, so forward survives
+//! a step back.
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
@@ -33,6 +37,9 @@ pub struct NavHistory {
     forward: VecDeque<i32>,
     /// When the user was last on this page (arrival or departure).
     last_visited: HashMap<i32, Instant>,
+    /// Pages placed by go-to, a PDF link, or the store key.
+    /// Trail walks can also leave a page in `back` or `forward`.
+    saved: HashSet<i32>,
 }
 
 impl NavHistory {
@@ -40,30 +47,55 @@ impl NavHistory {
         self.back.clear();
         self.forward.clear();
         self.last_visited.clear();
+        self.saved.clear();
     }
 
-    /// Remember that `page` was visited at `now`.
+    /// True when `page` is on the stack (saved, or sitting in either trail).
+    pub fn contains_page(&self, page: i32) -> bool {
+        self.saved.contains(&page) || self.back.contains(&page) || self.forward.contains(&page)
+    }
+
+    /// Remember that `page` was visited at `now`. Does not push the stack.
     pub fn note_visit(&mut self, page: i32, now: Instant) {
         self.last_visited.insert(page, now);
     }
 
     /// New jump away from `from`. Drops only the forward tail.
-    /// `from` is kept on the back stack when `record_from` is set (dwell met).
+    /// `from` is kept on the back stack when `record_from` is set
+    /// (go-to or a PDF link — not a sequential step).
     pub fn begin_new_jump(&mut self, from: i32, now: Instant, record_from: bool) {
-        self.forward.clear();
+        let dropped: Vec<i32> = self.forward.drain(..).collect();
         self.note_visit(from, now);
         if record_from {
-            self.back.push_back(from);
-            trim_front(&mut self.back);
+            self.remember(from);
+        }
+        for page in dropped {
+            self.forget_if_untrailed(page);
         }
     }
 
+    /// Put `page` on the stack without moving and without dropping the forward tail.
+    pub fn store_page(&mut self, page: i32, now: Instant) {
+        self.note_visit(page, now);
+        self.remember(page);
+    }
+
     /// Step back. The page being left stays on the forward tail.
+    /// A stored page that is still the current page is not a real step back.
     pub fn go_back(&mut self, current: i32, now: Instant) -> Option<i32> {
-        let target = self.back.pop_back()?;
+        let peeled = self.back.back() == Some(&current);
+        if peeled {
+            self.back.pop_back();
+        }
+        let Some(target) = self.back.pop_back() else {
+            if peeled {
+                self.back.push_back(current);
+            }
+            return None;
+        };
         self.note_visit(current, now);
         self.forward.push_back(current);
-        trim_front(&mut self.forward);
+        trim_front(&mut self.forward, &mut self.saved, &self.back);
         self.note_visit(target, now);
         Some(target)
     }
@@ -73,9 +105,27 @@ impl NavHistory {
         let target = self.forward.pop_back()?;
         self.note_visit(current, now);
         self.back.push_back(current);
-        trim_front(&mut self.back);
+        trim_front(&mut self.back, &mut self.saved, &self.forward);
         self.note_visit(target, now);
         Some(target)
+    }
+
+    fn remember(&mut self, page: i32) {
+        self.saved.insert(page);
+        if self.back.back() == Some(&page) || self.forward.contains(&page) {
+            return;
+        }
+        if self.back.contains(&page) {
+            return;
+        }
+        self.back.push_back(page);
+        trim_front(&mut self.back, &mut self.saved, &self.forward);
+    }
+
+    fn forget_if_untrailed(&mut self, page: i32) {
+        if !self.back.contains(&page) && !self.forward.contains(&page) {
+            self.saved.remove(&page);
+        }
     }
 
     /// Up to `max` jump targets, most recently visited first, skipping `current`.
@@ -116,9 +166,14 @@ impl NavHistory {
     }
 }
 
-fn trim_front(q: &mut VecDeque<i32>) {
+fn trim_front(q: &mut VecDeque<i32>, saved: &mut HashSet<i32>, other: &VecDeque<i32>) {
     while q.len() > NAV_HISTORY_MAX {
-        q.pop_front();
+        let Some(page) = q.pop_front() else {
+            break;
+        };
+        if !q.contains(&page) && !other.contains(&page) {
+            saved.remove(&page);
+        }
     }
 }
 
@@ -341,6 +396,91 @@ mod tests {
         assert!(
             block.contains("historyPanel.innerWidth")
                 || block.contains("width: historyPanel.width")
+        );
+    }
+
+    #[test]
+    fn a_visit_alone_does_not_push_the_stack() {
+        let t = Instant::now();
+        let mut h = NavHistory::default();
+        h.note_visit(0, at(t, 0));
+        h.note_visit(1, at(t, 1));
+        assert!(!h.contains_page(0));
+        assert!(!h.contains_page(1));
+        assert!(h.picker_targets(9, 1).is_empty());
+        assert_eq!(h.go_back(1, at(t, 2)), None);
+    }
+
+    #[test]
+    fn store_page_marks_it_and_keeps_the_forward_tail() {
+        let t = Instant::now();
+        let mut h = NavHistory::default();
+        h.begin_new_jump(0, at(t, 0), true);
+        h.begin_new_jump(2, at(t, 1), true);
+        assert_eq!(h.go_back(4, at(t, 2)), Some(2));
+        assert_eq!(h.forward.iter().copied().collect::<Vec<_>>(), vec![4]);
+        h.store_page(2, at(t, 3));
+        assert!(h.contains_page(2));
+        assert_eq!(h.forward.iter().copied().collect::<Vec<_>>(), vec![4]);
+        assert_eq!(h.go_forward(2, at(t, 4)), Some(4));
+    }
+
+    #[test]
+    fn store_while_still_on_the_page_is_not_a_back_step() {
+        let t = Instant::now();
+        let mut h = NavHistory::default();
+        h.begin_new_jump(0, at(t, 0), true);
+        h.store_page(3, at(t, 1));
+        assert!(h.contains_page(3));
+        assert_eq!(h.go_back(3, at(t, 2)), Some(0));
+        assert!(h.contains_page(3));
+        assert_eq!(h.forward.iter().copied().collect::<Vec<_>>(), vec![3]);
+        assert_eq!(h.go_forward(0, at(t, 3)), Some(3));
+    }
+
+    #[test]
+    fn stepping_away_after_store_does_not_push_the_new_page() {
+        let t = Instant::now();
+        let mut h = NavHistory::default();
+        h.store_page(1, at(t, 0));
+        // A sequential leave only notes the visit. It does not call begin_new_jump.
+        h.note_visit(2, at(t, 1));
+        assert!(h.contains_page(1));
+        assert!(!h.contains_page(2));
+        let pages: Vec<i32> = h
+            .picker_targets(9, 2)
+            .iter()
+            .map(|item| item.page)
+            .collect();
+        assert_eq!(pages, vec![1]);
+    }
+
+    #[test]
+    fn goto_records_the_left_page_without_a_dwell() {
+        let t = Instant::now();
+        let mut h = NavHistory::default();
+        h.begin_new_jump(4, at(t, 0), true);
+        assert!(h.contains_page(4));
+        assert!(!h.contains_page(9));
+        assert_eq!(h.back.iter().copied().collect::<Vec<_>>(), vec![4]);
+    }
+
+    #[test]
+    fn stack_mark_is_drawn_on_presenter_slides() {
+        let qml = include_str!("../qml/Presenter.qml");
+        assert!(
+            qml.contains("id: stackMark"),
+            "current slide needs a visible stack tag"
+        );
+        assert!(
+            qml.contains("id: nextStackMark"),
+            "next slide needs the same tag when that page is on the stack"
+        );
+        assert!(qml.contains("current_on_stack"));
+        assert!(qml.contains("next_on_stack"));
+        assert!(
+            qml.contains("Mark this slide on the jump stack"),
+            "help overlay must document the store key"
         );
     }
 }

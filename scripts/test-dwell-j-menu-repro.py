@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Reproduce dwell-gate + j-menu issues against a real 5s dwell (no env override)."""
+"""Old dwell-gate repro. The dwell gate is gone: only g, PDF links, and m push the stack.
+
+Sequential keys do not. This script is not part of CI.
+"""
 
 from __future__ import annotations
 

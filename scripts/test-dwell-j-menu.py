@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Regression tests: ≥5s dwell records history on leave; j-menu + digit jump."""
+"""Regression tests: only go-to / links / m enter history; j-menu + digit jump.
+
+Sequential keys (arrows and the other step keys) do not push the stack.
+PDFPC_HISTORY_DWELL_MS is ignored; the dwell gate is gone.
+"""
 
 from __future__ import annotations
 
@@ -131,8 +135,8 @@ def main() -> int:
     failures: list[str] = []
     dwell = 600  # ms — keep tests fast; production default remains 5000
 
-    # A: dwell on page 0, arrow next → history records 0 (Ctrl+Left returns)
-    print("=== A: sequential leave after dwell records history ===")
+    # A: arrow next must NOT record page 0. m, then arrow, then back, must.
+    print("=== A: arrows do not record; m does ===")
     kill_pdfpc()
     write_recent([{"path": str(DEMO.resolve()), "page": 0}])
     proc = start_pdfpc(DEMO, dwell_ms=dwell)
@@ -140,24 +144,38 @@ def main() -> int:
     if not focus_presenter():
         failures.append("A: no presenter")
     else:
-        time.sleep(dwell / 1000.0 + 0.25)
         xdotool("key", "Right")
         if not wait_page(DEMO, 1):
             failures.append("A: Right failed")
         else:
             xdotool("key", "ctrl+Left")
-            if not wait_page(DEMO, 0):
+            if not wait_page(DEMO, 1, timeout=1.2):
                 failures.append(
-                    f"A: Ctrl+Left expected page 0 after dwelled Next, got {read_recent_page(DEMO)}"
+                    f"A: arrow must not push history, still on {read_recent_page(DEMO)}"
                 )
             else:
-                print("OK   dwelled Next records history")
+                print("OK   arrow does not record history")
+            xdotool("key", "Left")
+            wait_page(DEMO, 0)
+            xdotool("key", "m")
+            time.sleep(0.15)
+            xdotool("key", "Right")
+            if not wait_page(DEMO, 1):
+                failures.append("A: Right after m failed")
+            else:
+                xdotool("key", "ctrl+Left")
+                if not wait_page(DEMO, 0):
+                    failures.append(
+                        f"A: m then back expected page 0, got {read_recent_page(DEMO)}"
+                    )
+                else:
+                    print("OK   m stores the slide")
     kill_pdfpc()
     if proc.poll() is None:
         proc.send_signal(signal.SIGTERM)
 
-    # B: short stop must NOT record
-    print("=== B: short Zwischenstopp skipped ===")
+    # B: go-to records even a short stop (no dwell gate).
+    print("=== B: go-to records the slide you leave ===")
     kill_pdfpc()
     write_recent([{"path": str(DEMO.resolve()), "page": 0}])
     proc = start_pdfpc(DEMO, dwell_ms=dwell)
@@ -165,19 +183,18 @@ def main() -> int:
     if not focus_presenter():
         failures.append("B: no presenter")
     else:
-        time.sleep(dwell / 1000.0 + 0.25)
         xdotool("key", "g", "3", "Return")
         wait_page(DEMO, 2)
-        time.sleep(0.1)  # << dwell
+        time.sleep(0.1)
         xdotool("key", "g", "4", "Return")
         wait_page(DEMO, 3)
         xdotool("key", "ctrl+Left")
-        if not wait_page(DEMO, 0):
+        if not wait_page(DEMO, 2):
             failures.append(
-                f"B: expected skip short stop back to 0, got {read_recent_page(DEMO)}"
+                f"B: go-to should record the left slide (page 2), got {read_recent_page(DEMO)}"
             )
         else:
-            print("OK   short stop skipped")
+            print("OK   go-to records without a dwell")
     kill_pdfpc()
     if proc.poll() is None:
         proc.send_signal(signal.SIGTERM)
@@ -191,6 +208,8 @@ def main() -> int:
     if not focus_presenter():
         failures.append("C: no presenter")
     else:
+        xdotool("key", "m")
+        time.sleep(0.1)
         xdotool("key", "Right")
         wait_page(DEMO, 1)
         time.sleep(0.2)

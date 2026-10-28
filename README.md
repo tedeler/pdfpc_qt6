@@ -80,8 +80,9 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | ←, ↑, Backspace, Page Up / right click | Previous slide (keyboard in normal, laser, and pen; right click in normal and laser) |
 | Shift+→ / Shift+← | Jump forward / back 10 slides |
 | Home / End | First / last slide |
-| `g`, digits, Enter | Go to slide (1-based); records history if dwell ≥5s |
-| Click PDF link | Jump to linked page (e.g. Beamer TOC); history if dwell ≥5s |
+| `g`, digits, Enter | Go to slide (1-based); the slide you leave goes on the jump stack |
+| Click PDF link | Jump to linked page (e.g. Beamer TOC); the slide you leave goes on the jump stack |
+| `m` | Mark the current slide on the jump stack (no page change) |
 | Ctrl+← | History back (pages ahead of you stay available) |
 | Ctrl+→ | History forward |
 | `j`, then `1`–`9` | Jump history, at most 9 pages, with time since each was last visited |
@@ -101,7 +102,7 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | `h` | Show / hide the shortcut help (presenter only) |
 | Escape | Close recent/help/history, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
 
-Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the jump-history list (`j`) is open, `1`–`9` pick a target and `j`/Escape closes it. The list shows at most 9 other pages and, after each one, how long since you were last on it (`12 s`, or `3 min` past a minute). Going back does not delete the pages in front of you; Ctrl+→ walks back along them. A new jump (link, go-to, or the list) drops only that forward tail. A page enters jump history when you **leave** it after staying at least 5 seconds (arrows, links, or `g`); shorter stops are skipped. The `j` list lives on the presenter window. While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
+Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the jump-history list (`j`) is open, `1`–`9` pick a target and `j`/Escape closes it. The list shows at most 9 other pages and, after each one, how long since you were last on it (`12 s`, or `3 min` past a minute). Going back does not delete the pages in front of you; Ctrl+→ walks back along them. A new jump (link, go-to, or the list) drops only that forward tail. A slide enters the stack only when you leave it with `g` or a PDF link, or when you press `m` on it. Arrows, Space, Shift+←/→, Home/End, and the other step keys do not. Slides on the stack show an amber mark on the presenter view (current and next). The `j` list lives on the presenter window. While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
 
 Timer starts when you leave page 1, or with `s` (needed again after Ctrl+T reset). Shown only on the presenter.
 

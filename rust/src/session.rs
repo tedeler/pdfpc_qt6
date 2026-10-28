@@ -40,6 +40,8 @@ pub mod qobject {
         #[qproperty(bool, help_visible)]
         #[qproperty(bool, history_visible)]
         #[qproperty(QString, history_targets_json)]
+        #[qproperty(bool, current_on_stack)]
+        #[qproperty(bool, next_on_stack)]
         #[qproperty(bool, recent_visible)]
         #[qproperty(QString, recent_files_json)]
         #[qproperty(QString, app_version)]
@@ -194,9 +196,7 @@ pub mod qobject {
 }
 
 use crate::laser_trail::{self, MIN_POINT_GAP};
-use crate::nav_history::{
-    dwell_allows_record, format_elapsed, NavHistory, HISTORY_DWELL_DEFAULT, HISTORY_PICKER_MAX,
-};
+use crate::nav_history::{format_elapsed, NavHistory, HISTORY_PICKER_MAX};
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -246,15 +246,39 @@ const LASER_TRAIL_TTL: Duration = Duration::from_secs(2);
 const SHIFT_MODIFIER: i32 = 0x0200_0000;
 const CTRL_MODIFIER: i32 = 0x0400_0000;
 
+/// Letter that stores the current slide on the jump stack without moving.
+const STACK_STORE_KEY: char = 'm';
+
 /// How a page leave interacts with jump history.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum LeaveKind {
-    /// Link / go-to / Home / End / picker — clear forward even without dwell.
-    Explicit,
-    /// Next/prev / Shift±10 — record only after dwell; keep forward otherwise.
+    /// Go-to (`g`) or a PDF link: truncate the forward tail and push the page you leave.
+    Stack,
+    /// J-menu pick: truncate only the forward tail. Does not push a new page.
+    Menu,
+    /// Arrows, space, Shift±10, Home/End, and the other step keys. No stack change.
     Step,
     /// Ctrl+←/→ history walk — the stacks move in history_back/forward.
     History,
+}
+
+/// What `go_to_page` should do to the stack for a [`LeaveKind`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum StackAction {
+    /// Sequential paging and history walks (the walk already updated the deques).
+    None,
+    /// Go-to / PDF link.
+    RecordAndTruncate,
+    /// J-menu: drop the forward tail only.
+    TruncateOnly,
+}
+
+fn stack_action(kind: LeaveKind) -> StackAction {
+    match kind {
+        LeaveKind::Stack => StackAction::RecordAndTruncate,
+        LeaveKind::Menu => StackAction::TruncateOnly,
+        LeaveKind::Step | LeaveKind::History => StackAction::None,
+    }
 }
 
 type Point = (f64, f64);
@@ -296,6 +320,8 @@ pub struct SessionRust {
     help_visible: bool,
     history_visible: bool,
     history_targets_json: QString,
+    current_on_stack: bool,
+    next_on_stack: bool,
     recent_visible: bool,
     recent_files_json: QString,
     app_version: QString,
@@ -314,14 +340,10 @@ pub struct SessionRust {
     /// Page to restore once PdfDocument reports pageCount.
     pending_page: Option<i32>,
     recent_entries: Vec<RecentEntry>,
-    /// Jump history (links / go-to / dwelled leaves). Not used for a short step.
+    /// Jump history. Sequential steps do not push; go-to, links, and `m` do.
     nav_history: NavHistory,
     /// Last time the open J-menu refreshed its visited-ago labels.
     history_menu_refreshed: Option<Instant>,
-    /// Page for which [`Self::page_entered_at`] applies.
-    dwell_page: Option<i32>,
-    /// When the current page was entered (for the ≥5s history dwell gate).
-    page_entered_at: Instant,
 }
 
 impl Default for SessionRust {
@@ -353,6 +375,8 @@ impl Default for SessionRust {
             help_visible: false,
             history_visible: false,
             history_targets_json: QString::from("[]"),
+            current_on_stack: false,
+            next_on_stack: false,
             recent_visible: false,
             recent_files_json: QString::from("[]"),
             app_version: QString::from(env!("PDFPC_VERSION")),
@@ -370,8 +394,6 @@ impl Default for SessionRust {
             recent_entries: recent::load(),
             nav_history: NavHistory::default(),
             history_menu_refreshed: None,
-            dwell_page: None,
-            page_entered_at: Instant::now(),
         }
     }
 }
@@ -401,8 +423,6 @@ impl qobject::Session {
             rust.accumulated = Duration::ZERO;
             rust.last_tick = None;
             rust.nav_history.clear();
-            rust.dwell_page = None;
-            rust.page_entered_at = Instant::now();
             recent::touch(&mut rust.recent_entries, &abs_str, restore_page);
             recent::save(&rust.recent_entries);
         }
@@ -483,7 +503,7 @@ impl qobject::Session {
 
     /// Move by `delta` slides (negative = back). Clamps to the document.
     /// Matches classic pdfpc Shift+←/→ (±10) and plain ←/→ (±1).
-    /// After a ≥5s dwell, the left page is recorded in jump history.
+    /// Sequential moves do not push the jump stack.
     fn jump_pages(self: Pin<&mut Self>, delta: i32) {
         if delta == 0 {
             return;
@@ -505,13 +525,13 @@ impl qobject::Session {
     }
 
     pub fn goto_first(self: Pin<&mut Self>) {
-        self.go_to_page(0, LeaveKind::Explicit);
+        self.go_to_page(0, LeaveKind::Step);
     }
 
     pub fn goto_last(self: Pin<&mut Self>) {
         let count = *self.page_count();
         if count > 0 {
-            self.go_to_page(count - 1, LeaveKind::Explicit);
+            self.go_to_page(count - 1, LeaveKind::Step);
         }
     }
 
@@ -540,7 +560,7 @@ impl qobject::Session {
             return;
         }
         let target = *self.audience_page();
-        self.go_to_page(target, LeaveKind::Explicit);
+        self.go_to_page(target, LeaveKind::Step);
     }
 
     pub fn exit_state(mut self: Pin<&mut Self>) {
@@ -765,6 +785,7 @@ impl qobject::Session {
                         's' => self.start_timer(),
                         'h' => self.set_help_visible(true),
                         'j' => self.toggle_history(),
+                        letter if letter == STACK_STORE_KEY => self.store_current_on_stack(),
                         _ => {}
                     }
                 } else if let Some(ch) = ch {
@@ -907,7 +928,7 @@ impl qobject::Session {
         if *self.help_visible() || *self.recent_visible() || *self.history_visible() {
             return;
         }
-        self.jump_to_page(page);
+        self.stack_jump(page);
     }
 
     pub fn history_back(mut self: Pin<&mut Self>) {
@@ -1022,14 +1043,19 @@ impl qobject::Session {
         if let Ok(one_based) = buf.parse::<i32>() {
             let count = *self.page_count();
             if one_based >= 1 && one_based <= count {
-                self.jump_to_page(one_based - 1);
+                self.stack_jump(one_based - 1);
             }
         }
     }
 
-    /// Explicit jump (link / go-to / history picker).
-    fn jump_to_page(self: Pin<&mut Self>, target: i32) {
-        self.go_to_page(target, LeaveKind::Explicit);
+    /// Go-to or PDF link: record the page being left and drop the forward tail.
+    fn stack_jump(self: Pin<&mut Self>, target: i32) {
+        self.go_to_page(target, LeaveKind::Stack);
+    }
+
+    /// J-menu pick: drop the forward tail, do not push the page being left.
+    fn menu_jump(self: Pin<&mut Self>, target: i32) {
+        self.go_to_page(target, LeaveKind::Menu);
     }
 
     /// Apply a page from Back/Forward without pushing a new jump entry.
@@ -1037,7 +1063,21 @@ impl qobject::Session {
         self.go_to_page(target, LeaveKind::History);
     }
 
-    /// Navigate to `target`, optionally recording the left page after a ≥5s dwell.
+    /// Store the current slide. Does not change page and does not drop forward history.
+    fn store_current_on_stack(mut self: Pin<&mut Self>) {
+        let count = *self.page_count();
+        let cur = *self.current_page();
+        if count <= 0 || cur < 0 || cur >= count {
+            return;
+        }
+        self.as_mut()
+            .rust_mut()
+            .nav_history
+            .store_page(cur, Instant::now());
+        self.sync_stack_marks();
+    }
+
+    /// Navigate to `target`. Only [`LeaveKind::Stack`] pushes the page you leave.
     fn go_to_page(mut self: Pin<&mut Self>, target: i32, kind: LeaveKind) {
         let count = *self.page_count();
         if count <= 0 || target < 0 || target >= count {
@@ -1049,23 +1089,19 @@ impl qobject::Session {
         }
         let now = Instant::now();
         self.as_mut().rust_mut().nav_history.note_visit(cur, now);
-        match kind {
-            LeaveKind::History => {}
-            LeaveKind::Explicit => {
-                // New jump: drop only the forward tail, then continue from here.
-                let record = self.record_current_for_history();
+        match stack_action(kind) {
+            StackAction::None => {}
+            StackAction::RecordAndTruncate => {
                 self.as_mut()
                     .rust_mut()
                     .nav_history
-                    .begin_new_jump(cur, now, record);
+                    .begin_new_jump(cur, now, true);
             }
-            LeaveKind::Step => {
-                if self.record_current_for_history() {
-                    self.as_mut()
-                        .rust_mut()
-                        .nav_history
-                        .begin_new_jump(cur, now, true);
-                }
+            StackAction::TruncateOnly => {
+                self.as_mut()
+                    .rust_mut()
+                    .nav_history
+                    .begin_new_jump(cur, now, false);
             }
         }
         self.as_mut().rust_mut().nav_history.note_visit(target, now);
@@ -1073,10 +1109,6 @@ impl qobject::Session {
         self.as_mut().clear_laser_trails();
         self.as_mut().set_current_page(target);
         self.refresh_derived();
-    }
-
-    fn record_current_for_history(&self) -> bool {
-        dwell_allows_record(self.rust().page_entered_at, Instant::now(), history_dwell())
     }
 
     fn handle_history_picker_key(mut self: Pin<&mut Self>, key: i32, ch: Option<char>) {
@@ -1100,7 +1132,7 @@ impl qobject::Session {
                 if let Some(target) = targets.get(idx) {
                     let page = target.page;
                     self.as_mut().hide_history();
-                    self.jump_to_page(page);
+                    self.menu_jump(page);
                 }
             }
         }
@@ -1161,13 +1193,6 @@ impl qobject::Session {
     fn refresh_derived(mut self: Pin<&mut Self>) {
         let count = *self.page_count();
         let cur = *self.current_page();
-        {
-            let mut rust = self.as_mut().rust_mut();
-            if rust.dwell_page != Some(cur) {
-                rust.dwell_page = Some(cur);
-                rust.page_entered_at = Instant::now();
-            }
-        }
         let next = if count > 0 && cur + 1 < count {
             cur + 1
         } else {
@@ -1186,7 +1211,17 @@ impl qobject::Session {
         };
         self.as_mut().set_page_label(QString::from(&label));
         self.as_mut().persist_current_page();
-        self.sync_stroke_props();
+        self.as_mut().sync_stroke_props();
+        self.sync_stack_marks();
+    }
+
+    fn sync_stack_marks(mut self: Pin<&mut Self>) {
+        let cur = *self.current_page();
+        let next = *self.next_page();
+        let cur_on = self.rust().nav_history.contains_page(cur);
+        let next_on = next >= 0 && self.rust().nav_history.contains_page(next);
+        self.as_mut().set_current_on_stack(cur_on);
+        self.set_next_on_stack(next_on);
     }
 
     fn persist_current_page(mut self: Pin<&mut Self>) {
@@ -1362,17 +1397,6 @@ fn hex_nibble(b: u8) -> Option<u8> {
     }
 }
 
-/// Minimum dwell before a page may enter jump history.
-/// Override with `PDFPC_HISTORY_DWELL_MS` (milliseconds) for tests.
-fn history_dwell() -> Duration {
-    if let Ok(raw) = std::env::var("PDFPC_HISTORY_DWELL_MS") {
-        if let Ok(ms) = raw.parse::<u64>() {
-            return Duration::from_millis(ms);
-        }
-    }
-    HISTORY_DWELL_DEFAULT
-}
-
 fn history_picker_digit(key: i32, ch: Option<char>) -> Option<usize> {
     if let Some(c) = ch {
         if c.is_ascii_digit() {
@@ -1427,9 +1451,10 @@ fn page_after_jump(cur: i32, count: i32, delta: i32) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::{
-        nav_delta_for_mode, page_after_jump, KEY_BACKSPACE, KEY_DOWN, KEY_ENTER, KEY_ESCAPE,
-        KEY_F3, KEY_HOME, KEY_LEFT, KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_RETURN, KEY_RIGHT, KEY_SPACE,
-        KEY_UP, MODE_LASER, MODE_NORMAL, MODE_PEN, PAGE_SKIP,
+        nav_delta_for_mode, page_after_jump, stack_action, LeaveKind, StackAction, KEY_BACKSPACE,
+        KEY_DOWN, KEY_ENTER, KEY_ESCAPE, KEY_F3, KEY_HOME, KEY_LEFT, KEY_PAGE_DOWN, KEY_PAGE_UP,
+        KEY_RETURN, KEY_RIGHT, KEY_SPACE, KEY_UP, MODE_LASER, MODE_NORMAL, MODE_PEN, PAGE_SKIP,
+        STACK_STORE_KEY,
     };
 
     #[test]
@@ -1490,5 +1515,27 @@ mod tests {
         // An unknown mode does not inherit pen/laser/normal navigation.
         assert_eq!(nav_delta_for_mode(99, KEY_RIGHT, false), None);
         assert_eq!(nav_delta_for_mode(99, KEY_SPACE, false), None);
+    }
+
+    #[test]
+    fn only_goto_and_links_push_the_stack() {
+        assert_eq!(
+            stack_action(LeaveKind::Stack),
+            StackAction::RecordAndTruncate
+        );
+        assert_eq!(stack_action(LeaveKind::Menu), StackAction::TruncateOnly);
+        assert_eq!(stack_action(LeaveKind::Step), StackAction::None);
+        assert_eq!(stack_action(LeaveKind::History), StackAction::None);
+    }
+
+    #[test]
+    fn store_key_does_not_collide_with_shortcuts() {
+        // Letters already bound in handle_key. Ctrl+G, Ctrl+T, and Shift+S are chords.
+        const TAKEN: &[char] = &['b', 'c', 'f', 'g', 'h', 'j', 'p', 's'];
+        assert!(
+            !TAKEN.contains(&STACK_STORE_KEY),
+            "store key {STACK_STORE_KEY} is already a shortcut"
+        );
+        assert_eq!(STACK_STORE_KEY, 'm');
     }
 }

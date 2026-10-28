@@ -281,8 +281,8 @@ def main() -> int:
     if proc.poll() is None:
         proc.send_signal(signal.SIGTERM)
 
-    # --- C: short dwell must not enter history ---
-    print("=== C: dwell gate (short stop skipped) ===")
+    # --- C: go-to records even a short stop; there is no dwell gate ---
+    print("=== C: go-to records a short stop ===")
     kill_pdfpc()
     write_recent([{"path": str(DEMO.resolve()), "page": 0}])
     proc = start_pdfpc(DEMO, dwell_ms=800)
@@ -303,13 +303,13 @@ def main() -> int:
                 failures.append(f"C: quick jump to 4 failed, page={read_recent_page(DEMO)}")
             else:
                 xdotool("key", "ctrl+Left")
-                # Back should skip the short stop (page 2) and return to page 0.
-                if not wait_page(DEMO, 0):
+                # The short stop (page 2) was a go-to, so it is on the stack.
+                if not wait_page(DEMO, 2):
                     failures.append(
-                        f"C: Ctrl+Left after short stop expected page 0, got {read_recent_page(DEMO)}"
+                        f"C: Ctrl+Left after go-to expected page 2, got {read_recent_page(DEMO)}"
                     )
                 else:
-                    print("OK   short Zwischenstopp skipped in history")
+                    print("OK   go-to records without a dwell")
     kill_pdfpc()
     if proc.poll() is None:
         proc.send_signal(signal.SIGTERM)
