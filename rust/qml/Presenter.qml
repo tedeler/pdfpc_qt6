@@ -241,6 +241,7 @@ ApplicationWindow {
         ["←  ↑  Backspace  Page Up", "Previous slide (also right click; laser too)"],
         ["Home / End", "First / last slide"],
         ["g, digits, Enter", "Go to slide"],
+        ["Ctrl+G", "Jump to frozen page (while frozen)"],
         ["b", "Blank audience screen"],
         ["f", "Freeze audience screen"],
         ["1", "Normal mouse"],
