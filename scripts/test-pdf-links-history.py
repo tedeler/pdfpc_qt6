@@ -45,10 +45,15 @@ def read_recent_page(pdf: Path) -> int | None:
     return None
 
 
-def start_pdfpc(pdf: Path) -> subprocess.Popen:
+def start_pdfpc(pdf: Path, *, dwell_ms: int | None = 0) -> subprocess.Popen:
+    """Start pdfpc. dwell_ms=0 disables the ≥5s history gate (default for fast tests)."""
     env = os.environ.copy()
     env["DISPLAY"] = DISPLAY
     env["QT_QPA_PLATFORM"] = "xcb"
+    if dwell_ms is not None:
+        env["PDFPC_HISTORY_DWELL_MS"] = str(dwell_ms)
+    else:
+        env.pop("PDFPC_HISTORY_DWELL_MS", None)
     return subprocess.Popen(
         [str(BIN), "--windowed", str(pdf)],
         env=env,
@@ -272,6 +277,74 @@ def main() -> int:
             else:
                 print("OK   Ctrl+Left after link → TOC")
 
+    kill_pdfpc()
+    if proc.poll() is None:
+        proc.send_signal(signal.SIGTERM)
+
+    # --- C: short dwell must not enter history ---
+    print("=== C: dwell gate (short stop skipped) ===")
+    kill_pdfpc()
+    write_recent([{"path": str(DEMO.resolve()), "page": 0}])
+    proc = start_pdfpc(DEMO, dwell_ms=800)
+    time.sleep(2.5)
+    if not focus_presenter():
+        failures.append("C: presenter missing")
+    else:
+        # Arrive on page 0, wait past dwell, jump to 3 → page 0 recorded.
+        time.sleep(0.9)
+        xdotool("key", "g", "3", "Return")
+        if not wait_page(DEMO, 2):
+            failures.append(f"C: dwell jump to 3 failed, page={read_recent_page(DEMO)}")
+        else:
+            # Quick hop 3 → 4 without waiting → page 2 must NOT be recorded.
+            time.sleep(0.15)
+            xdotool("key", "g", "4", "Return")
+            if not wait_page(DEMO, 3):
+                failures.append(f"C: quick jump to 4 failed, page={read_recent_page(DEMO)}")
+            else:
+                xdotool("key", "ctrl+Left")
+                # Back should skip the short stop (page 2) and return to page 0.
+                if not wait_page(DEMO, 0):
+                    failures.append(
+                        f"C: Ctrl+Left after short stop expected page 0, got {read_recent_page(DEMO)}"
+                    )
+                else:
+                    print("OK   short Zwischenstopp skipped in history")
+    kill_pdfpc()
+    if proc.poll() is None:
+        proc.send_signal(signal.SIGTERM)
+
+    # --- D: j picker + digit selects target ---
+    print("=== D: jump-history picker (j + digit) ===")
+    kill_pdfpc()
+    write_recent([{"path": str(DEMO.resolve()), "page": 0}])
+    proc = start_pdfpc(DEMO, dwell_ms=0)
+    time.sleep(2.5)
+    if not focus_presenter():
+        failures.append("D: presenter missing")
+    else:
+        xdotool("key", "g", "2", "Return")
+        wait_page(DEMO, 1)
+        time.sleep(0.2)
+        xdotool("key", "g", "4", "Return")
+        wait_page(DEMO, 3)
+        time.sleep(0.2)
+        # History back stack (most recent first): page 1, then page 0.
+        xdotool("key", "j")
+        time.sleep(0.35)
+        shot = screenshot("D-history-picker.png")
+        text = ocr(shot)
+        (OUT / "D-picker.ocr.txt").write_text(text)
+        if "Jump history" not in text and "Slide" not in text:
+            failures.append(f"D: picker overlay not visible in OCR: {text[:120]!r}")
+        else:
+            print("OK   j opens jump-history list")
+        # Key 1 = most recent back target (page 1 / Slide 2)
+        xdotool("key", "1")
+        if not wait_page(DEMO, 1):
+            failures.append(f"D: picker key 1 expected page 1, got {read_recent_page(DEMO)}")
+        else:
+            print("OK   picker digit 1 jumps to Slide 2")
     kill_pdfpc()
     if proc.poll() is None:
         proc.send_signal(signal.SIGTERM)

@@ -38,6 +38,8 @@ pub mod qobject {
         #[qproperty(i32, audience_screen)]
         #[qproperty(bool, windowed)]
         #[qproperty(bool, help_visible)]
+        #[qproperty(bool, history_visible)]
+        #[qproperty(QString, history_targets_json)]
         #[qproperty(bool, recent_visible)]
         #[qproperty(QString, recent_files_json)]
         #[qproperty(QString, app_version)]
@@ -174,6 +176,14 @@ pub mod qobject {
         fn history_forward(self: Pin<&mut Self>);
 
         #[qinvokable]
+        #[cxx_name = "toggleHistory"]
+        fn toggle_history(self: Pin<&mut Self>);
+
+        #[qinvokable]
+        #[cxx_name = "hideHistory"]
+        fn hide_history(self: Pin<&mut Self>);
+
+        #[qinvokable]
         #[cxx_name = "configureWindowed"]
         fn configure_windowed(self: Pin<&mut Self>, windowed: bool);
 
@@ -184,7 +194,9 @@ pub mod qobject {
 }
 
 use crate::laser_trail::{self, MIN_POINT_GAP};
-use crate::nav_history::NavHistory;
+use crate::nav_history::{
+    dwell_allows_record, NavHistory, HISTORY_DWELL_DEFAULT, HISTORY_PICKER_MAX,
+};
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -271,6 +283,8 @@ pub struct SessionRust {
     audience_screen: i32,
     windowed: bool,
     help_visible: bool,
+    history_visible: bool,
+    history_targets_json: QString,
     recent_visible: bool,
     recent_files_json: QString,
     app_version: QString,
@@ -291,6 +305,10 @@ pub struct SessionRust {
     recent_entries: Vec<RecentEntry>,
     /// Jump history (links / go-to); not used for sequential next/prev.
     nav_history: NavHistory,
+    /// Page for which [`Self::page_entered_at`] applies.
+    dwell_page: Option<i32>,
+    /// When the current page was entered (for the ≥5s history dwell gate).
+    page_entered_at: Instant,
 }
 
 impl Default for SessionRust {
@@ -320,6 +338,8 @@ impl Default for SessionRust {
             audience_screen: 1,
             windowed: false,
             help_visible: false,
+            history_visible: false,
+            history_targets_json: QString::from("[]"),
             recent_visible: false,
             recent_files_json: QString::from("[]"),
             app_version: QString::from(env!("PDFPC_VERSION")),
@@ -336,6 +356,8 @@ impl Default for SessionRust {
             pending_page: None,
             recent_entries: recent::load(),
             nav_history: NavHistory::default(),
+            dwell_page: None,
+            page_entered_at: Instant::now(),
         }
     }
 }
@@ -368,6 +390,8 @@ impl qobject::Session {
             rust.accumulated = Duration::ZERO;
             rust.last_tick = None;
             rust.nav_history.clear();
+            rust.dwell_page = None;
+            rust.page_entered_at = Instant::now();
             recent::touch(&mut rust.recent_entries, &abs_str, restore_page);
             recent::save(&rust.recent_entries);
         }
@@ -382,6 +406,8 @@ impl qobject::Session {
         self.as_mut().set_timer_paused(false);
         self.as_mut().set_timer_text(QString::from("00:00:00"));
         self.as_mut().set_help_visible(false);
+        self.as_mut().set_history_visible(false);
+        self.as_mut().set_history_targets_json(QString::from("[]"));
         self.as_mut().set_recent_visible(false);
         self.as_mut().set_goto_active(false);
         self.as_mut().set_goto_buffer(QString::default());
@@ -400,6 +426,7 @@ impl qobject::Session {
         }
         self.as_mut().sync_recent_json();
         self.as_mut().set_help_visible(false);
+        self.as_mut().set_history_visible(false);
         self.set_recent_visible(true);
     }
 
@@ -523,6 +550,10 @@ impl qobject::Session {
     }
 
     pub fn exit_state(mut self: Pin<&mut Self>) {
+        if *self.history_visible() {
+            self.hide_history();
+            return;
+        }
         if *self.goto_active() {
             self.cancel_goto();
             return;
@@ -644,6 +675,12 @@ impl qobject::Session {
             return;
         }
 
+        // Jump-history picker: digit selects a target; j / Escape closes.
+        if *self.history_visible() {
+            self.handle_history_picker_key(key, ch);
+            return;
+        }
+
         // While the help is shown only h / Escape / F3 do anything.
         if *self.help_visible() {
             match (key, ch) {
@@ -727,6 +764,7 @@ impl qobject::Session {
                         'p' | 'P' => self.toggle_pause(),
                         's' | 'S' => self.start_timer(),
                         'h' | 'H' => self.set_help_visible(true),
+                        'j' | 'J' => self.toggle_history(),
                         '1' => self.set_mode_internal(MODE_NORMAL),
                         '2' => self.set_mode_internal(MODE_LASER),
                         '3' => self.set_mode_internal(MODE_PEN),
@@ -849,6 +887,7 @@ impl qobject::Session {
         let mode = *self.mode();
         if *self.help_visible()
             || *self.recent_visible()
+            || *self.history_visible()
             || (mode != MODE_NORMAL && mode != MODE_LASER)
         {
             return;
@@ -861,32 +900,58 @@ impl qobject::Session {
     }
 
     pub fn follow_link(self: Pin<&mut Self>, page: i32) {
-        if *self.help_visible() || *self.recent_visible() {
+        if *self.help_visible() || *self.recent_visible() || *self.history_visible() {
             return;
         }
         self.jump_to_page(page);
     }
 
     pub fn history_back(mut self: Pin<&mut Self>) {
-        if *self.help_visible() || *self.recent_visible() || *self.goto_active() {
+        if *self.help_visible()
+            || *self.recent_visible()
+            || *self.history_visible()
+            || *self.goto_active()
+        {
             return;
         }
         let cur = *self.current_page();
-        let target = self.as_mut().rust_mut().nav_history.go_back(cur);
+        let record = self.record_current_for_history().then_some(cur);
+        let target = self.as_mut().rust_mut().nav_history.go_back(record);
         if let Some(target) = target {
             self.apply_history_page(target);
         }
     }
 
     pub fn history_forward(mut self: Pin<&mut Self>) {
-        if *self.help_visible() || *self.recent_visible() || *self.goto_active() {
+        if *self.help_visible()
+            || *self.recent_visible()
+            || *self.history_visible()
+            || *self.goto_active()
+        {
             return;
         }
         let cur = *self.current_page();
-        let target = self.as_mut().rust_mut().nav_history.go_forward(cur);
+        let record = self.record_current_for_history().then_some(cur);
+        let target = self.as_mut().rust_mut().nav_history.go_forward(record);
         if let Some(target) = target {
             self.apply_history_page(target);
         }
+    }
+
+    pub fn toggle_history(mut self: Pin<&mut Self>) {
+        if *self.history_visible() {
+            self.hide_history();
+            return;
+        }
+        if *self.help_visible() || *self.recent_visible() || *self.goto_active() {
+            return;
+        }
+        self.as_mut().sync_history_targets_json();
+        self.set_history_visible(true);
+    }
+
+    pub fn hide_history(self: Pin<&mut Self>) {
+        self.set_history_visible(false);
     }
 
     pub fn configure_windowed(self: Pin<&mut Self>, windowed: bool) {
@@ -950,7 +1015,8 @@ impl qobject::Session {
         }
     }
 
-    /// Explicit jump (link / go-to): push history, then show `target`.
+    /// Explicit jump (link / go-to / history picker): maybe push history, then show `target`.
+    /// The left page is recorded only after a ≥5s dwell (see [`history_dwell`]).
     fn jump_to_page(mut self: Pin<&mut Self>, target: i32) {
         let count = *self.page_count();
         if count <= 0 || target < 0 || target >= count {
@@ -960,14 +1026,18 @@ impl qobject::Session {
         if target == cur {
             return;
         }
-        self.as_mut().rust_mut().nav_history.push_jump(cur);
+        if self.record_current_for_history() {
+            self.as_mut().rust_mut().nav_history.push_jump(cur);
+        } else {
+            self.as_mut().rust_mut().nav_history.clear_forward();
+        }
         self.as_mut().maybe_start_timer_on_leave_first(cur);
         self.as_mut().clear_laser_trails();
         self.as_mut().set_current_page(target);
         self.refresh_derived();
     }
 
-    /// Apply a page from Back/Forward without pushing a new history entry.
+    /// Apply a page from Back/Forward without pushing a new jump entry.
     fn apply_history_page(mut self: Pin<&mut Self>, target: i32) {
         let count = *self.page_count();
         if count <= 0 || target < 0 || target >= count {
@@ -981,6 +1051,47 @@ impl qobject::Session {
         self.as_mut().clear_laser_trails();
         self.as_mut().set_current_page(target);
         self.refresh_derived();
+    }
+
+    fn record_current_for_history(&self) -> bool {
+        dwell_allows_record(self.rust().page_entered_at, Instant::now(), history_dwell())
+    }
+
+    fn handle_history_picker_key(mut self: Pin<&mut Self>, key: i32, ch: Option<char>) {
+        match (key, ch) {
+            (KEY_ESCAPE, _) | (_, Some('j' | 'J')) => {
+                self.hide_history();
+            }
+            _ => {
+                let digit = history_picker_digit(key, ch);
+                if let Some(digit) = digit {
+                    if (1..=HISTORY_PICKER_MAX).contains(&digit) {
+                        let idx = digit - 1;
+                        let targets = self.rust().nav_history.picker_targets(HISTORY_PICKER_MAX);
+                        if let Some(&page) = targets.get(idx) {
+                            self.as_mut().hide_history();
+                            self.jump_to_page(page);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn sync_history_targets_json(self: Pin<&mut Self>) {
+        let targets = self.rust().nav_history.picker_targets(HISTORY_PICKER_MAX);
+        let arr: Vec<Value> = targets
+            .iter()
+            .enumerate()
+            .map(|(i, &page)| {
+                json!({
+                    "key": (i + 1).to_string(),
+                    "page": page,
+                    "label": format!("Slide {}", page + 1),
+                })
+            })
+            .collect();
+        self.set_history_targets_json(QString::from(&Value::Array(arr).to_string()));
     }
 
     fn handle_goto_key(self: Pin<&mut Self>, key: i32, text: &str) {
@@ -1015,6 +1126,13 @@ impl qobject::Session {
     fn refresh_derived(mut self: Pin<&mut Self>) {
         let count = *self.page_count();
         let cur = *self.current_page();
+        {
+            let mut rust = self.as_mut().rust_mut();
+            if rust.dwell_page != Some(cur) {
+                rust.dwell_page = Some(cur);
+                rust.page_entered_at = Instant::now();
+            }
+        }
         let next = if count > 0 && cur + 1 < count {
             cur + 1
         } else {
@@ -1207,6 +1325,29 @@ fn hex_nibble(b: u8) -> Option<u8> {
         b'A'..=b'F' => Some(b - b'A' + 10),
         _ => None,
     }
+}
+
+/// Minimum dwell before a page may enter jump history.
+/// Override with `PDFPC_HISTORY_DWELL_MS` (milliseconds) for tests.
+fn history_dwell() -> Duration {
+    if let Ok(raw) = std::env::var("PDFPC_HISTORY_DWELL_MS") {
+        if let Ok(ms) = raw.parse::<u64>() {
+            return Duration::from_millis(ms);
+        }
+    }
+    HISTORY_DWELL_DEFAULT
+}
+
+fn history_picker_digit(key: i32, ch: Option<char>) -> Option<usize> {
+    if let Some(c) = ch {
+        if c.is_ascii_digit() {
+            return Some((c as u8 - b'0') as usize);
+        }
+    }
+    if (KEY_0..=KEY_9).contains(&key) {
+        return Some((key - KEY_0) as usize);
+    }
+    None
 }
 
 /// Target page after a relative jump, or `None` if nothing would change.

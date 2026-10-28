@@ -241,10 +241,11 @@ ApplicationWindow {
         ["←  ↑  Backspace  Page Up", "Previous slide (also right click; laser too)"],
         ["Shift+→ / Shift+←", "Jump forward / back 10 slides"],
         ["Home / End", "First / last slide"],
-        ["g, digits, Enter", "Go to slide (pushes history)"],
+        ["g, digits, Enter", "Go to slide (history if dwell ≥5s)"],
         ["Click PDF link", "Jump to linked slide (e.g. Beamer TOC)"],
         ["Ctrl+←", "History back (undo jump)"],
         ["Ctrl+→", "History forward"],
+        ["j", "Jump-history list; 1–9 pick a target"],
         ["Ctrl+G", "Jump to frozen page (while frozen)"],
         ["b", "Blank audience screen"],
         ["f", "Freeze audience screen"],
@@ -259,8 +260,17 @@ ApplicationWindow {
         ["Shift+S", "Swap presenter and audience screens"],
         ["F3", "Open recent files / choose PDF"],
         ["h", "Show / hide this help"],
-        ["Escape", "Close recent/help, cancel go-to, unblank, unfreeze, resume timer, normal mouse"]
+        ["Escape", "Close recent/help/history, cancel go-to, unblank, unfreeze, resume timer, normal mouse"]
     ]
+
+    // Binding tracks history_targets_json so the overlay updates when opened.
+    readonly property var historyEntries: {
+        try {
+            return JSON.parse(root.ctrl.history_targets_json)
+        } catch (e) {
+            return []
+        }
+    }
 
     function recentEntries() {
         try {
@@ -340,6 +350,89 @@ ApplicationWindow {
                     text: "h or Escape closes this help"
                     color: "#909090"
                     font.pixelSize: helpGrid.fontSize - 2
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        id: historyOverlay
+        anchors.fill: parent
+        visible: root.ctrl.history_visible
+        color: "#e0101010"
+        z: 1000
+
+        MouseArea {
+            anchors.fill: parent
+            acceptedButtons: Qt.AllButtons
+            hoverEnabled: true
+        }
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: Math.min(root.width * 0.55, historyColumn.width + 64)
+            height: historyColumn.height + 48
+            color: "#202020"
+            border.color: "#505050"
+            radius: 8
+
+            Column {
+                id: historyColumn
+                anchors.centerIn: parent
+                spacing: 12
+                width: Math.max(historyTitle.implicitWidth, historyList.implicitWidth)
+
+                Text {
+                    id: historyTitle
+                    text: "Jump history"
+                    color: "#ffffff"
+                    font.pixelSize: historyFont.fontSize + 6
+                    font.bold: true
+                }
+
+                Text {
+                    id: historyHint
+                    visible: root.historyEntries.length === 0
+                    text: "No jump targets yet.\nStay ≥5s on a slide, then jump (link / g)."
+                    color: "#a0a0a0"
+                    font.pixelSize: historyFont.fontSize
+                    wrapMode: Text.WordWrap
+                    width: Math.min(implicitWidth, root.width * 0.45)
+                }
+
+                Column {
+                    id: historyList
+                    spacing: 6
+                    visible: root.historyEntries.length > 0
+
+                    Repeater {
+                        model: root.historyEntries
+                        Row {
+                            spacing: 16
+                            Text {
+                                text: modelData.key
+                                color: "#7ec8ff"
+                                font.pixelSize: historyFont.fontSize
+                                font.family: "DejaVu Sans Mono"
+                                font.bold: true
+                                width: historyFont.fontSize * 1.4
+                            }
+                            Text {
+                                text: modelData.label
+                                color: "#e8e8e8"
+                                font.pixelSize: historyFont.fontSize
+                                font.family: "DejaVu Sans"
+                            }
+                        }
+                    }
+                }
+
+                Text {
+                    id: historyFont
+                    readonly property int fontSize: Math.max(14, Math.min(22, Math.round(root.height / 36)))
+                    text: "1–9 jumps · j or Escape closes"
+                    color: "#909090"
+                    font.pixelSize: fontSize - 2
                 }
             }
         }
