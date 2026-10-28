@@ -200,6 +200,9 @@ const KEY_9: i32 = 0x39;
 const KEY_A: i32 = 0x41;
 const KEY_Z: i32 = 0x5a;
 
+/// Classic pdfpc: Shift+← / Shift+→ skips this many slides.
+const PAGE_SKIP: i32 = 10;
+
 /// Laser pointer radius as a fraction of the slide height.
 /// Default is ~1/3 of the earlier 0.022 size so the tip matches a fine laser.
 const POINTER_SIZE_DEFAULT: f64 = 0.022 / 3.0;
@@ -410,33 +413,38 @@ impl qobject::Session {
         self.refresh_derived();
     }
 
-    pub fn next_page_action(mut self: Pin<&mut Self>) {
+    pub fn next_page_action(self: Pin<&mut Self>) {
+        self.jump_pages(1);
+    }
+
+    pub fn prev_page_action(self: Pin<&mut Self>) {
+        self.jump_pages(-1);
+    }
+
+    /// Move by `delta` slides (negative = back). Clamps to the document.
+    /// Matches classic pdfpc Shift+←/→ (±10) and plain ←/→ (±1).
+    fn jump_pages(mut self: Pin<&mut Self>, delta: i32) {
+        if delta == 0 {
+            return;
+        }
         if *self.goto_active() {
-            self.commit_goto();
+            if delta > 0 {
+                self.commit_goto();
+            } else {
+                self.cancel_goto();
+            }
             return;
         }
         let count = *self.page_count();
         let cur = *self.current_page();
-        if count <= 0 || cur + 1 >= count {
+        let Some(target) = page_after_jump(cur, count, delta) else {
             return;
-        }
-        self.as_mut().maybe_start_timer_on_leave_first(cur);
-        self.as_mut().clear_laser_trails();
-        self.as_mut().set_current_page(cur + 1);
-        self.refresh_derived();
-    }
-
-    pub fn prev_page_action(mut self: Pin<&mut Self>) {
-        if *self.goto_active() {
-            self.cancel_goto();
-            return;
-        }
-        let cur = *self.current_page();
-        if cur <= 0 {
-            return;
+        };
+        if delta > 0 {
+            self.as_mut().maybe_start_timer_on_leave_first(cur);
         }
         self.as_mut().clear_laser_trails();
-        self.as_mut().set_current_page(cur - 1);
+        self.as_mut().set_current_page(target);
         self.refresh_derived();
     }
 
@@ -631,13 +639,24 @@ impl qobject::Session {
 
         let mode = *self.mode();
         match key {
-            KEY_RIGHT | KEY_DOWN | KEY_SPACE | KEY_RETURN | KEY_ENTER | KEY_PAGE_DOWN => {
+            // Shift+←/→ jumps PAGE_SKIP slides, like classic pdfpc.
+            KEY_RIGHT => {
+                if mode == MODE_NORMAL || mode == MODE_LASER {
+                    self.jump_pages(if shift { PAGE_SKIP } else { 1 });
+                }
+            }
+            KEY_LEFT => {
+                if mode == MODE_NORMAL || mode == MODE_LASER {
+                    self.jump_pages(if shift { -PAGE_SKIP } else { -1 });
+                }
+            }
+            KEY_DOWN | KEY_SPACE | KEY_RETURN | KEY_ENTER | KEY_PAGE_DOWN => {
                 // Navigation stays available in laser mode (pen keeps focus on drawing).
                 if mode == MODE_NORMAL || mode == MODE_LASER {
                     self.next_page_action();
                 }
             }
-            KEY_LEFT | KEY_UP | KEY_BACKSPACE | KEY_PAGE_UP => {
+            KEY_UP | KEY_BACKSPACE | KEY_PAGE_UP => {
                 if mode == MODE_NORMAL || mode == MODE_LASER {
                     self.prev_page_action();
                 }
@@ -1081,5 +1100,43 @@ fn hex_nibble(b: u8) -> Option<u8> {
         b'a'..=b'f' => Some(b - b'a' + 10),
         b'A'..=b'F' => Some(b - b'A' + 10),
         _ => None,
+    }
+}
+
+/// Target page after a relative jump, or `None` if nothing would change.
+fn page_after_jump(cur: i32, count: i32, delta: i32) -> Option<i32> {
+    if count <= 0 || delta == 0 {
+        return None;
+    }
+    let target = (i64::from(cur) + i64::from(delta)).clamp(0, i64::from(count - 1)) as i32;
+    if target == cur {
+        None
+    } else {
+        Some(target)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{page_after_jump, PAGE_SKIP};
+
+    #[test]
+    fn shift_skip_jumps_ten() {
+        assert_eq!(page_after_jump(0, 50, PAGE_SKIP), Some(10));
+        assert_eq!(page_after_jump(15, 50, -PAGE_SKIP), Some(5));
+    }
+
+    #[test]
+    fn shift_skip_clamps_at_ends() {
+        assert_eq!(page_after_jump(45, 50, PAGE_SKIP), Some(49));
+        assert_eq!(page_after_jump(3, 50, -PAGE_SKIP), Some(0));
+        assert_eq!(page_after_jump(0, 50, -PAGE_SKIP), None);
+        assert_eq!(page_after_jump(49, 50, PAGE_SKIP), None);
+    }
+
+    #[test]
+    fn single_step_still_works() {
+        assert_eq!(page_after_jump(7, 50, 1), Some(8));
+        assert_eq!(page_after_jump(7, 50, -1), Some(6));
     }
 }
