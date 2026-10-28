@@ -160,6 +160,19 @@ pub mod qobject {
         #[cxx_name = "mouseClick"]
         fn mouse_click(self: Pin<&mut Self>, button: i32);
 
+        /// Follow an internal PDF link to `page` (0-based), pushing history.
+        #[qinvokable]
+        #[cxx_name = "followLink"]
+        fn follow_link(self: Pin<&mut Self>, page: i32);
+
+        #[qinvokable]
+        #[cxx_name = "historyBack"]
+        fn history_back(self: Pin<&mut Self>);
+
+        #[qinvokable]
+        #[cxx_name = "historyForward"]
+        fn history_forward(self: Pin<&mut Self>);
+
         #[qinvokable]
         #[cxx_name = "configureWindowed"]
         fn configure_windowed(self: Pin<&mut Self>, windowed: bool);
@@ -171,6 +184,7 @@ pub mod qobject {
 }
 
 use crate::laser_trail::{self, MIN_POINT_GAP};
+use crate::nav_history::NavHistory;
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -272,6 +286,8 @@ pub struct SessionRust {
     /// Page to restore once PdfDocument reports pageCount.
     pending_page: Option<i32>,
     recent_entries: Vec<RecentEntry>,
+    /// Jump history (links / go-to); not used for sequential next/prev.
+    nav_history: NavHistory,
 }
 
 impl Default for SessionRust {
@@ -316,6 +332,7 @@ impl Default for SessionRust {
             pdf_path: String::new(),
             pending_page: None,
             recent_entries: recent::load(),
+            nav_history: NavHistory::default(),
         }
     }
 }
@@ -347,6 +364,7 @@ impl qobject::Session {
             rust.timer_paused_flag = false;
             rust.accumulated = Duration::ZERO;
             rust.last_tick = None;
+            rust.nav_history.clear();
             recent::touch(&mut rust.recent_entries, &abs_str, restore_page);
             recent::save(&rust.recent_entries);
         }
@@ -641,6 +659,14 @@ impl qobject::Session {
             return;
         }
 
+        if ctrl && key == KEY_LEFT {
+            self.history_back();
+            return;
+        }
+        if ctrl && key == KEY_RIGHT {
+            self.history_forward();
+            return;
+        }
         if ctrl && key_letter(key) == Some('g') {
             self.jump_to_frozen();
             return;
@@ -815,6 +841,35 @@ impl qobject::Session {
         }
     }
 
+    pub fn follow_link(self: Pin<&mut Self>, page: i32) {
+        if *self.help_visible() || *self.recent_visible() {
+            return;
+        }
+        self.jump_to_page(page);
+    }
+
+    pub fn history_back(mut self: Pin<&mut Self>) {
+        if *self.help_visible() || *self.recent_visible() || *self.goto_active() {
+            return;
+        }
+        let cur = *self.current_page();
+        let target = self.as_mut().rust_mut().nav_history.go_back(cur);
+        if let Some(target) = target {
+            self.apply_history_page(target);
+        }
+    }
+
+    pub fn history_forward(mut self: Pin<&mut Self>) {
+        if *self.help_visible() || *self.recent_visible() || *self.goto_active() {
+            return;
+        }
+        let cur = *self.current_page();
+        let target = self.as_mut().rust_mut().nav_history.go_forward(cur);
+        if let Some(target) = target {
+            self.apply_history_page(target);
+        }
+    }
+
     pub fn configure_windowed(self: Pin<&mut Self>, windowed: bool) {
         self.set_windowed(windowed);
     }
@@ -871,18 +926,42 @@ impl qobject::Session {
         if let Ok(one_based) = buf.parse::<i32>() {
             let count = *self.page_count();
             if one_based >= 1 && one_based <= count {
-                let target = one_based - 1;
-                let cur = *self.current_page();
-                if cur == 0 && target != 0 {
-                    self.as_mut().maybe_start_timer_on_leave_first(0);
-                }
-                if target != cur {
-                    self.as_mut().clear_laser_trails();
-                }
-                self.as_mut().set_current_page(target);
-                self.refresh_derived();
+                self.jump_to_page(one_based - 1);
             }
         }
+    }
+
+    /// Explicit jump (link / go-to): push history, then show `target`.
+    fn jump_to_page(mut self: Pin<&mut Self>, target: i32) {
+        let count = *self.page_count();
+        if count <= 0 || target < 0 || target >= count {
+            return;
+        }
+        let cur = *self.current_page();
+        if target == cur {
+            return;
+        }
+        self.as_mut().rust_mut().nav_history.push_jump(cur);
+        self.as_mut().maybe_start_timer_on_leave_first(cur);
+        self.as_mut().clear_laser_trails();
+        self.as_mut().set_current_page(target);
+        self.refresh_derived();
+    }
+
+    /// Apply a page from Back/Forward without pushing a new history entry.
+    fn apply_history_page(mut self: Pin<&mut Self>, target: i32) {
+        let count = *self.page_count();
+        if count <= 0 || target < 0 || target >= count {
+            return;
+        }
+        let cur = *self.current_page();
+        if target == cur {
+            return;
+        }
+        self.as_mut().maybe_start_timer_on_leave_first(cur);
+        self.as_mut().clear_laser_trails();
+        self.as_mut().set_current_page(target);
+        self.refresh_derived();
     }
 
     fn handle_goto_key(self: Pin<&mut Self>, key: i32, text: &str) {
