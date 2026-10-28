@@ -4,6 +4,8 @@ Slim dual-monitor PDF presenter for Linux (KDE/Wayland). Hard-wired keys match t
 
 Current version: see [`VERSION`](VERSION) (also shown under **Help → About pdfpc-qt6**, together with the build-time Git commit id).
 
+**Help → Check for updates…** compares that version with the latest GitHub release and version tags, and shows the current and latest version. **Help → pdfpc-qt6 on GitHub** opens https://github.com/tedeler/pdfpc_qt6 in the browser.
+
 ## Build
 
 System packages (Ubuntu/Kubuntu):
@@ -47,6 +49,10 @@ sudo apt install ./pdfpc-qt6_1.05_amd64.deb
 ```
 
 CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v1.05`) additionally publishes a GitHub Release with the same package.
+
+### Updates
+
+Nothing is downloaded or installed at startup, and a version check never installs by itself. The install starts only when you click **Install and restart** in the update dialog. That downloads the `.deb` attached to the GitHub release (same architecture as this machine) and installs it with `pkexec`, which asks for authorization. After a successful install, pdfpc-qt6 restarts. `curl` and `pkexec` are package dependencies.
 
 ## Usage
 

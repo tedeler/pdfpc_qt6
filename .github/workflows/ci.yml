@@ -45,6 +45,16 @@ jobs:
           RUSTFLAGS: "-C linker=g++"
         run: cargo build --release
 
+      - name: Update-check tests
+        working-directory: rust
+        env:
+          QMAKE: /usr/bin/qmake6
+          QT_VERSION_MAJOR: "6"
+          CXX: g++
+          CC: gcc
+          RUSTFLAGS: "-C linker=g++"
+        run: cargo test --release
+
       - name: Laser trail continuity tests
         env:
           QMAKE: /usr/bin/qmake6
