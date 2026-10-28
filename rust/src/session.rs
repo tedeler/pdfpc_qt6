@@ -724,29 +724,15 @@ impl qobject::Session {
         }
 
         let mode = *self.mode();
+        // Slide keys are consumed in every mode. Normal, laser, and pen apply
+        // the same delta; mouse clicks stay mode-specific (pen draws).
+        if nav_key_delta(key, shift).is_some() {
+            if let Some(delta) = nav_delta_for_mode(mode, key, shift) {
+                self.jump_pages(delta);
+            }
+            return;
+        }
         match key {
-            // Shift+←/→ jumps PAGE_SKIP slides, like classic pdfpc.
-            KEY_RIGHT => {
-                if mode == MODE_NORMAL || mode == MODE_LASER {
-                    self.jump_pages(if shift { PAGE_SKIP } else { 1 });
-                }
-            }
-            KEY_LEFT => {
-                if mode == MODE_NORMAL || mode == MODE_LASER {
-                    self.jump_pages(if shift { -PAGE_SKIP } else { -1 });
-                }
-            }
-            KEY_DOWN | KEY_SPACE | KEY_RETURN | KEY_ENTER | KEY_PAGE_DOWN => {
-                // Navigation stays available in laser mode (pen keeps focus on drawing).
-                if mode == MODE_NORMAL || mode == MODE_LASER {
-                    self.next_page_action();
-                }
-            }
-            KEY_UP | KEY_BACKSPACE | KEY_PAGE_UP => {
-                if mode == MODE_NORMAL || mode == MODE_LASER {
-                    self.prev_page_action();
-                }
-            }
             KEY_HOME => self.goto_first(),
             KEY_END => self.goto_last(),
             KEY_ESCAPE => self.exit_state(),
@@ -1357,6 +1343,32 @@ fn history_picker_digit(key: i32, ch: Option<char>) -> Option<usize> {
     None
 }
 
+/// Keyboard next/previous is the same in normal, laser, and pen.
+/// Mouse-click navigation is separate and stays off while the pen is drawing.
+fn keyboard_slide_nav(mode: i32) -> bool {
+    mode == MODE_NORMAL || mode == MODE_LASER || mode == MODE_PEN
+}
+
+/// Relative slide delta for a navigation key. `None` if `key` is not one.
+/// Shift scales only ←/→ (`PAGE_SKIP`); the other shortcuts stay ±1.
+fn nav_key_delta(key: i32, shift: bool) -> Option<i32> {
+    match key {
+        KEY_RIGHT => Some(if shift { PAGE_SKIP } else { 1 }),
+        KEY_LEFT => Some(if shift { -PAGE_SKIP } else { -1 }),
+        KEY_DOWN | KEY_SPACE | KEY_RETURN | KEY_ENTER | KEY_PAGE_DOWN => Some(1),
+        KEY_UP | KEY_BACKSPACE | KEY_PAGE_UP => Some(-1),
+        _ => None,
+    }
+}
+
+/// Slide delta applied for `mode`, or `None` when that mode ignores the key.
+fn nav_delta_for_mode(mode: i32, key: i32, shift: bool) -> Option<i32> {
+    if !keyboard_slide_nav(mode) {
+        return None;
+    }
+    nav_key_delta(key, shift)
+}
+
 /// Target page after a relative jump, or `None` if nothing would change.
 fn page_after_jump(cur: i32, count: i32, delta: i32) -> Option<i32> {
     if count <= 0 || delta == 0 {
@@ -1372,7 +1384,11 @@ fn page_after_jump(cur: i32, count: i32, delta: i32) -> Option<i32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{page_after_jump, PAGE_SKIP};
+    use super::{
+        nav_delta_for_mode, page_after_jump, KEY_BACKSPACE, KEY_DOWN, KEY_ENTER, KEY_ESCAPE,
+        KEY_F3, KEY_HOME, KEY_LEFT, KEY_PAGE_DOWN, KEY_PAGE_UP, KEY_RETURN, KEY_RIGHT, KEY_SPACE,
+        KEY_UP, MODE_LASER, MODE_NORMAL, MODE_PEN, PAGE_SKIP,
+    };
 
     #[test]
     fn shift_skip_jumps_ten() {
@@ -1392,5 +1408,45 @@ mod tests {
     fn single_step_still_works() {
         assert_eq!(page_after_jump(7, 50, 1), Some(8));
         assert_eq!(page_after_jump(7, 50, -1), Some(6));
+    }
+
+    #[test]
+    fn pen_mode_slide_keys_match_other_modes() {
+        let keys = [
+            (KEY_RIGHT, false),
+            (KEY_LEFT, false),
+            (KEY_RIGHT, true),
+            (KEY_LEFT, true),
+            (KEY_DOWN, false),
+            (KEY_SPACE, false),
+            (KEY_RETURN, false),
+            (KEY_ENTER, false),
+            (KEY_PAGE_DOWN, false),
+            (KEY_UP, false),
+            (KEY_BACKSPACE, false),
+            (KEY_PAGE_UP, false),
+            (KEY_SPACE, true),
+            (KEY_PAGE_UP, true),
+        ];
+        for (key, shift) in keys {
+            let normal = nav_delta_for_mode(MODE_NORMAL, key, shift);
+            let laser = nav_delta_for_mode(MODE_LASER, key, shift);
+            let pen = nav_delta_for_mode(MODE_PEN, key, shift);
+            assert!(normal.is_some(), "key {key:#x} shift={shift}");
+            assert_eq!(laser, normal);
+            assert_eq!(pen, normal);
+            let delta = normal.unwrap();
+            assert_eq!(
+                page_after_jump(12, 50, delta),
+                Some((12 + delta).clamp(0, 49))
+            );
+        }
+        // Home / Escape / F3 are not relative slide keys in any mode.
+        assert_eq!(nav_delta_for_mode(MODE_PEN, KEY_HOME, false), None);
+        assert_eq!(nav_delta_for_mode(MODE_NORMAL, KEY_ESCAPE, false), None);
+        assert_eq!(nav_delta_for_mode(MODE_LASER, KEY_F3, false), None);
+        // An unknown mode does not inherit pen/laser/normal navigation.
+        assert_eq!(nav_delta_for_mode(99, KEY_RIGHT, false), None);
+        assert_eq!(nav_delta_for_mode(99, KEY_SPACE, false), None);
     }
 }
