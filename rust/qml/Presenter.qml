@@ -315,7 +315,7 @@ ApplicationWindow {
         ["Click PDF link", "Jump to linked slide (history if dwell ≥5s)"],
         ["Ctrl+←", "History back"],
         ["Ctrl+→", "History forward"],
-        ["j", "Jump-history list; 1–9 pick a target"],
+        ["j", "Jump history (≤9) with time since last visit"],
         ["Ctrl+G", "Jump to frozen page (while frozen)"],
         ["b", "Blank audience screen"],
         ["f", "Freeze audience screen"],
@@ -439,47 +439,59 @@ ApplicationWindow {
         }
 
         Rectangle {
+            id: historyPanel
+            // Width follows the window, not the unwrapped text, so labels cannot
+            // paint past the border. innerWidth is the column's content width.
+            readonly property int pad: 24
+            readonly property int innerWidth: Math.max(120, Math.min(440, root.width - 80))
             anchors.centerIn: parent
-            width: Math.min(root.width * 0.55, historyColumn.width + 64)
-            height: historyColumn.height + 48
+            width: Math.min(root.width - 32, innerWidth + pad * 2)
+            height: historyColumn.implicitHeight + pad * 2
             color: "#202020"
             border.color: "#505050"
             radius: 8
+            clip: true
 
             Column {
                 id: historyColumn
-                anchors.centerIn: parent
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.verticalCenter: parent.verticalCenter
                 spacing: 12
-                width: Math.max(historyTitle.implicitWidth, historyList.implicitWidth)
+                width: historyPanel.width - historyPanel.pad * 2
 
                 Text {
                     id: historyTitle
+                    width: parent.width
                     text: "Jump history"
                     color: "#ffffff"
                     font.pixelSize: historyFont.fontSize + 6
                     font.bold: true
+                    elide: Text.ElideRight
                 }
 
                 Text {
                     id: historyHint
                     visible: root.historyEntries.length === 0
+                    width: parent.width
                     text: "No jump targets yet.\nStay ≥5s on a slide, then leave it\n(arrow, link, or g)."
                     color: "#a0a0a0"
                     font.pixelSize: historyFont.fontSize
                     wrapMode: Text.WordWrap
-                    width: Math.min(implicitWidth, root.width * 0.45)
                 }
 
                 Column {
                     id: historyList
+                    width: parent.width
                     spacing: 6
                     visible: root.historyEntries.length > 0
 
                     Repeater {
                         model: root.historyEntries
                         Row {
-                            spacing: 16
+                            width: historyList.width
+                            spacing: 12
                             Text {
+                                id: historyKey
                                 text: modelData.key
                                 color: "#7ec8ff"
                                 font.pixelSize: historyFont.fontSize
@@ -492,6 +504,15 @@ ApplicationWindow {
                                 color: "#e8e8e8"
                                 font.pixelSize: historyFont.fontSize
                                 font.family: "DejaVu Sans"
+                                width: Math.max(0, parent.width - historyKey.width - historyAgo.implicitWidth - parent.spacing * 2)
+                                elide: Text.ElideRight
+                            }
+                            Text {
+                                id: historyAgo
+                                text: modelData.ago || ""
+                                color: "#909090"
+                                font.pixelSize: historyFont.fontSize
+                                font.family: "DejaVu Sans"
                             }
                         }
                     }
@@ -500,9 +521,11 @@ ApplicationWindow {
                 Text {
                     id: historyFont
                     readonly property int fontSize: Math.max(14, Math.min(22, Math.round(root.height / 36)))
+                    width: parent.width
                     text: "1–9 jumps · j or Escape closes"
                     color: "#909090"
-                    font.pixelSize: fontSize - 2
+                    font.pixelSize: fontSize
+                    wrapMode: Text.WordWrap
                 }
             }
         }
