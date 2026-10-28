@@ -466,21 +466,47 @@ mod tests {
     }
 
     #[test]
-    fn stack_mark_is_drawn_on_presenter_slides() {
+    fn stack_tag_matches_the_laser_badge() {
         let qml = include_str!("../qml/Presenter.qml");
+        let laser = qml.find("label: \"LASER\"").expect("laser badge");
+        let stack = qml.find("label: \"STACK\"").expect("stack badge");
         assert!(
-            qml.contains("id: stackMark"),
-            "current slide needs a visible stack tag"
+            stack > laser && stack - laser < 400,
+            "STACK must sit in the same badge row as LASER"
         );
         assert!(
-            qml.contains("id: nextStackMark"),
-            "next slide needs the same tag when that page is on the stack"
+            !qml.contains("#e6a23c") && !qml.contains("id: stackMark"),
+            "the amber on-slide mark is gone"
         );
         assert!(qml.contains("current_on_stack"));
-        assert!(qml.contains("next_on_stack"));
         assert!(
             qml.contains("Mark this slide on the jump stack"),
             "help overlay must document the store key"
         );
+    }
+
+    #[test]
+    fn help_overlay_scrolls_inside_the_window() {
+        let qml = include_str!("../qml/Presenter.qml");
+        let start = qml.find("id: helpOverlay").expect("help overlay");
+        let end = qml[start..]
+            .find("id: historyOverlay")
+            .map(|offset| start + offset)
+            .expect("history overlay");
+        let block = &qml[start..end];
+        assert!(
+            block.contains("id: helpFlick"),
+            "help list needs a flickable"
+        );
+        assert!(block.contains("ScrollBar.vertical"));
+        assert!(
+            block.contains("ScrollBar.AlwaysOn"),
+            "scrollbar stays visible when the list is taller than the panel"
+        );
+        assert!(
+            block.contains("Math.min(root.height - 32, helpColumn.implicitHeight"),
+            "panel height must stay inside the window"
+        );
+        assert!(block.contains("interactive: contentHeight > height"));
     }
 }

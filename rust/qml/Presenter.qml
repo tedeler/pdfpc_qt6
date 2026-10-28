@@ -196,18 +196,6 @@ ApplicationWindow {
                         z: 10
                     }
 
-                    // Bookmark on slides that are on the jump stack.
-                    Rectangle {
-                        id: stackMark
-                        visible: root.ctrl.current_on_stack && currentSlide.pageW > 8
-                        x: currentSlide.pageX + currentSlide.pageW - width - Math.max(6, currentSlide.pageW * 0.02)
-                        y: currentSlide.pageY
-                        width: Math.max(12, Math.min(22, currentSlide.pageW * 0.028))
-                        height: width * 1.55
-                        color: "#e6a23c"
-                        radius: 2
-                        z: 12
-                    }
                 }
 
                 SlideView {
@@ -222,18 +210,6 @@ ApplicationWindow {
                     interactive: false
                     ctrl: root.ctrl
                     opacity: root.ctrl.next_page >= 0 ? 1.0 : 0.35
-
-                    Rectangle {
-                        id: nextStackMark
-                        visible: root.ctrl.next_on_stack && nextSlide.pageW > 8
-                        x: nextSlide.pageX + nextSlide.pageW - width - Math.max(4, nextSlide.pageW * 0.02)
-                        y: nextSlide.pageY
-                        width: Math.max(8, Math.min(16, nextSlide.pageW * 0.04))
-                        height: width * 1.55
-                        color: "#e6a23c"
-                        radius: 2
-                        z: 12
-                    }
                 }
             }
 
@@ -288,7 +264,8 @@ ApplicationWindow {
                             { on: root.ctrl.blank, label: "BLANK", color: "#808080" },
                             { on: root.ctrl.frozen, label: "FROZEN", color: "#2f8fd8" },
                             { on: root.ctrl.mode === 1, label: "LASER", color: "#d83030" },
-                            { on: root.ctrl.mode === 2, label: "PEN", color: "#d83030" }
+                            { on: root.ctrl.mode === 2, label: "PEN", color: "#d83030" },
+                            { on: root.ctrl.current_on_stack, label: "STACK", color: "#3d6d99" }
                         ]
                         Rectangle {
                             visible: modelData.on
@@ -402,50 +379,81 @@ ApplicationWindow {
         }
 
         Rectangle {
+            id: helpPanel
+            readonly property int pad: 24
             anchors.centerIn: parent
-            width: helpColumn.width + 64
-            height: helpColumn.height + 48
+            width: Math.min(root.width - 32, helpColumn.implicitWidth + pad * 2)
+            height: Math.min(root.height - 32, helpColumn.implicitHeight + pad * 2)
             color: "#202020"
             border.color: "#505050"
             radius: 8
+            clip: true
 
-            Column {
-                id: helpColumn
-                anchors.centerIn: parent
-                spacing: 14
+            Flickable {
+                id: helpFlick
+                anchors.fill: parent
+                anchors.margins: helpPanel.pad
+                contentWidth: width
+                contentHeight: helpColumn.implicitHeight
+                clip: true
+                boundsBehavior: Flickable.StopAtBounds
+                flickableDirection: Flickable.VerticalFlick
+                interactive: contentHeight > height
 
-                Text {
-                    text: "Keyboard shortcuts"
-                    color: "#ffffff"
-                    font.pixelSize: helpGrid.fontSize + 6
-                    font.bold: true
-                }
+                Column {
+                    id: helpColumn
+                    width: Math.max(40, helpFlick.width - 12)
+                    spacing: 14
 
-                Grid {
-                    id: helpGrid
-                    readonly property int fontSize: Math.max(12, Math.min(20, Math.round(root.height / 42)))
-                    columns: 2
-                    columnSpacing: 32
-                    rowSpacing: 6
+                    Text {
+                        width: parent.width
+                        text: "Keyboard shortcuts"
+                        color: "#ffffff"
+                        font.pixelSize: helpGrid.fontSize + 6
+                        font.bold: true
+                        elide: Text.ElideRight
+                    }
 
-                    Repeater {
-                        model: root.shortcuts.length * 2
-                        Text {
-                            readonly property var entry: root.shortcuts[Math.floor(index / 2)]
-                            text: entry[index % 2]
-                            color: index % 2 === 0 ? "#7ec8ff" : "#e8e8e8"
-                            font.pixelSize: helpGrid.fontSize
-                            font.family: index % 2 === 0 ? "DejaVu Sans Mono" : "DejaVu Sans"
-                            width: index % 2 === 1 ? Math.min(implicitWidth, root.width * 0.45) : implicitWidth
-                            wrapMode: Text.WordWrap
+                    Grid {
+                        id: helpGrid
+                        readonly property int fontSize: Math.max(12, Math.min(20, Math.round(root.height / 42)))
+                        columns: 2
+                        columnSpacing: 32
+                        rowSpacing: 6
+
+                        Repeater {
+                            model: root.shortcuts.length * 2
+                            Text {
+                                readonly property var entry: root.shortcuts[Math.floor(index / 2)]
+                                text: entry[index % 2]
+                                color: index % 2 === 0 ? "#7ec8ff" : "#e8e8e8"
+                                font.pixelSize: helpGrid.fontSize
+                                font.family: index % 2 === 0 ? "DejaVu Sans Mono" : "DejaVu Sans"
+                                width: index % 2 === 1 ? Math.min(implicitWidth, root.width * 0.45) : implicitWidth
+                                wrapMode: Text.WordWrap
+                            }
                         }
+                    }
+
+                    Text {
+                        width: parent.width
+                        text: "h or Escape closes this help"
+                        color: "#909090"
+                        font.pixelSize: helpGrid.fontSize - 2
+                        wrapMode: Text.WordWrap
                     }
                 }
 
-                Text {
-                    text: "h or Escape closes this help"
-                    color: "#909090"
-                    font.pixelSize: helpGrid.fontSize - 2
+                ScrollBar.vertical: ScrollBar {
+                    id: helpScroll
+                    policy: helpFlick.contentHeight > helpFlick.height
+                            ? ScrollBar.AlwaysOn
+                            : ScrollBar.AlwaysOff
+                    contentItem: Rectangle {
+                        implicitWidth: 8
+                        radius: 4
+                        color: "#d0d0d0"
+                    }
                 }
             }
         }
