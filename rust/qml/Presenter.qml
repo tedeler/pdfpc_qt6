@@ -307,8 +307,8 @@ ApplicationWindow {
 
     // Keep in sync with handleKey in session.rs and the README key table.
     readonly property var shortcuts: [
-        ["→  ↓  Space  Enter  Page Down", "Next slide (also left click; laser too)"],
-        ["←  ↑  Backspace  Page Up", "Previous slide (also right click; laser too)"],
+        ["→  ↓  Space  Enter  Page Down", "Next slide (normal, laser, and pen; left click in normal/laser)"],
+        ["←  ↑  Backspace  Page Up", "Previous slide (normal, laser, and pen; right click in normal/laser)"],
         ["Shift+→ / Shift+←", "Jump forward / back 10 slides"],
         ["Home / End", "First / last slide"],
         ["g, digits, Enter", "Go to slide (history if dwell ≥5s)"],
