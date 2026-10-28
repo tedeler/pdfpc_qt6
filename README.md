@@ -74,10 +74,11 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | ←, ↑, Backspace, Page Up / right click | Previous slide (normal and laser mode) |
 | Shift+→ / Shift+← | Jump forward / back 10 slides |
 | Home / End | First / last slide |
-| `g`, digits, Enter | Go to slide (1-based); pushes jump history |
-| Click PDF link | Jump to linked page (e.g. Beamer TOC); pushes history |
+| `g`, digits, Enter | Go to slide (1-based); records history if dwell ≥5s |
+| Click PDF link | Jump to linked page (e.g. Beamer TOC); history if dwell ≥5s |
 | Ctrl+← | History back (undo jump; last 100 jumps) |
 | Ctrl+→ | History forward |
+| `j`, then `1`–`9` | Jump-history list; one key selects a recent target |
 | Ctrl+G | While frozen: jump presenter to the frozen audience page |
 | `b` | Blank audience (black) |
 | `f` | Freeze audience on the current slide + strokes |
@@ -92,9 +93,9 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | Shift+S | Swap presenter and audience screens |
 | F3 | Recent files / open PDF (Escape continues the current PDF) |
 | `h` | Show / hide the shortcut help (presenter only) |
-| Escape | Close recent/help, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
+| Escape | Close recent/help/history, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
 
-Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
+Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the jump-history list (`j`) is open, `1`–`9` pick a target and `j`/Escape closes it. A page enters jump history only after you stayed on it for at least 5 seconds (shorter stops are skipped). While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
 
 Timer starts when you leave page 1, or with `s` (needed again after Ctrl+T reset). Shown only on the presenter.
 
