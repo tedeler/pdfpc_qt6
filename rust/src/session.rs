@@ -195,7 +195,7 @@ pub mod qobject {
 
 use crate::laser_trail::{self, MIN_POINT_GAP};
 use crate::nav_history::{
-    dwell_allows_record, NavHistory, HISTORY_DWELL_DEFAULT, HISTORY_PICKER_MAX,
+    dwell_allows_record, format_elapsed, NavHistory, HISTORY_DWELL_DEFAULT, HISTORY_PICKER_MAX,
 };
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
@@ -305,6 +305,8 @@ pub struct SessionRust {
     recent_entries: Vec<RecentEntry>,
     /// Jump history (links / go-to); not used for sequential next/prev.
     nav_history: NavHistory,
+    /// Last time the open J-menu refreshed its “visited … ago” labels.
+    history_menu_refreshed: Option<Instant>,
     /// Page for which [`Self::page_entered_at`] applies.
     dwell_page: Option<i32>,
     /// When the current page was entered (for the ≥5s history dwell gate).
@@ -356,6 +358,7 @@ impl Default for SessionRust {
             pending_page: None,
             recent_entries: recent::load(),
             nav_history: NavHistory::default(),
+            history_menu_refreshed: None,
             dwell_page: None,
             page_entered_at: Instant::now(),
         }
@@ -369,11 +372,8 @@ impl qobject::Session {
         let path_str = path.to_string();
         let absolute = resolve_absolute_path(&path_str);
         let abs_str = absolute.to_string_lossy().into_owned();
-        let url = QUrl::from_user_input(
-            &QString::from(abs_str.as_str()),
-            &QString::default(),
-        )
-        .to_qstring();
+        let url = QUrl::from_user_input(&QString::from(abs_str.as_str()), &QString::default())
+            .to_qstring();
 
         let restore_page = recent::page_for(&self.rust().recent_entries, &abs_str);
 
@@ -649,7 +649,19 @@ impl qobject::Session {
         }
         // Keep afterglow opacity in sync even when the presentation timer is idle.
         if !self.rust().laser_trails.is_empty() {
-            self.sync_laser_trails();
+            self.as_mut().sync_laser_trails();
+        }
+        if *self.history_visible() {
+            let now = Instant::now();
+            let due = self
+                .rust()
+                .history_menu_refreshed
+                .map(|t| now.saturating_duration_since(t) >= Duration::from_secs(1))
+                .unwrap_or(true);
+            if due {
+                self.as_mut().rust_mut().history_menu_refreshed = Some(now);
+                self.as_mut().sync_history_targets_json();
+            }
         }
     }
 
@@ -915,8 +927,12 @@ impl qobject::Session {
             return;
         }
         let cur = *self.current_page();
-        let record = self.record_current_for_history().then_some(cur);
-        let target = self.as_mut().rust_mut().nav_history.go_back(record);
+        // Always keep `cur` on the forward tail. Dwell only gates new jumps.
+        let target = self
+            .as_mut()
+            .rust_mut()
+            .nav_history
+            .go_back(cur, Instant::now());
         if let Some(target) = target {
             self.apply_history_page(target);
         }
@@ -931,8 +947,11 @@ impl qobject::Session {
             return;
         }
         let cur = *self.current_page();
-        let record = self.record_current_for_history().then_some(cur);
-        let target = self.as_mut().rust_mut().nav_history.go_forward(record);
+        let target = self
+            .as_mut()
+            .rust_mut()
+            .nav_history
+            .go_forward(cur, Instant::now());
         if let Some(target) = target {
             self.apply_history_page(target);
         }
@@ -947,6 +966,7 @@ impl qobject::Session {
             return;
         }
         self.as_mut().sync_history_targets_json();
+        self.as_mut().rust_mut().history_menu_refreshed = Some(Instant::now());
         self.set_history_visible(true);
     }
 
@@ -1026,11 +1046,13 @@ impl qobject::Session {
         if target == cur {
             return;
         }
-        if self.record_current_for_history() {
-            self.as_mut().rust_mut().nav_history.push_jump(cur);
-        } else {
-            self.as_mut().rust_mut().nav_history.clear_forward();
-        }
+        let now = Instant::now();
+        let record_from = self.record_current_for_history();
+        self.as_mut()
+            .rust_mut()
+            .nav_history
+            .begin_new_jump(cur, now, record_from);
+        self.as_mut().rust_mut().nav_history.note_visit(target, now);
         self.as_mut().maybe_start_timer_on_leave_first(cur);
         self.as_mut().clear_laser_trails();
         self.as_mut().set_current_page(target);
@@ -1067,8 +1089,13 @@ impl qobject::Session {
                 if let Some(digit) = digit {
                     if (1..=HISTORY_PICKER_MAX).contains(&digit) {
                         let idx = digit - 1;
-                        let targets = self.rust().nav_history.picker_targets(HISTORY_PICKER_MAX);
-                        if let Some(&page) = targets.get(idx) {
+                        let cur = *self.current_page();
+                        let targets = self
+                            .rust()
+                            .nav_history
+                            .picker_targets(HISTORY_PICKER_MAX, cur);
+                        if let Some(target) = targets.get(idx) {
+                            let page = target.page;
                             self.as_mut().hide_history();
                             self.jump_to_page(page);
                         }
@@ -1079,15 +1106,22 @@ impl qobject::Session {
     }
 
     fn sync_history_targets_json(self: Pin<&mut Self>) {
-        let targets = self.rust().nav_history.picker_targets(HISTORY_PICKER_MAX);
+        let now = Instant::now();
+        let cur = *self.current_page();
+        let targets = self
+            .rust()
+            .nav_history
+            .picker_targets(HISTORY_PICKER_MAX, cur);
         let arr: Vec<Value> = targets
             .iter()
             .enumerate()
-            .map(|(i, &page)| {
+            .map(|(i, target)| {
+                let elapsed = now.saturating_duration_since(target.last_visited);
                 json!({
                     "key": (i + 1).to_string(),
-                    "page": page,
-                    "label": format!("Slide {}", page + 1),
+                    "page": target.page,
+                    "label": format!("Slide {}", target.page + 1),
+                    "ago": format_elapsed(elapsed),
                 })
             })
             .collect();

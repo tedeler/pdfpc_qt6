@@ -82,9 +82,9 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | Home / End | First / last slide |
 | `g`, digits, Enter | Go to slide (1-based); records history if dwell ≥5s |
 | Click PDF link | Jump to linked page (e.g. Beamer TOC); history if dwell ≥5s |
-| Ctrl+← | History back (undo jump; last 100 jumps) |
+| Ctrl+← | History back (the pages ahead of you stay available) |
 | Ctrl+→ | History forward |
-| `j`, then `1`–`9` | Jump-history list; one key selects a recent target |
+| `j`, then `1`–`9` | Jump history, at most 9 pages, with time since each was last visited |
 | Ctrl+G | While frozen: jump presenter to the frozen audience page |
 | `b` | Blank audience (black) |
 | `f` | Freeze audience on the current slide + strokes |
@@ -101,7 +101,7 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | `h` | Show / hide the shortcut help (presenter only) |
 | Escape | Close recent/help/history, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
 
-Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the jump-history list (`j`) is open, `1`–`9` pick a target and `j`/Escape closes it. A page enters jump history only after you stayed on it for at least 5 seconds (shorter stops are skipped). While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
+Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the jump-history list (`j`) is open, `1`–`9` pick a target and `j`/Escape closes it. The list shows at most 9 other pages and, after each one, how long since you were last on it (`12 s`, or `3 min` after a minute). Going back does not delete the pages in front of you; Ctrl+→ walks back along them. A new jump (link, go-to, or the list) drops only that forward tail and continues from the page you were on. A page is added to the trail only after you stayed on it for at least 5 seconds (shorter stops are skipped). While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
 
 Timer starts when you leave page 1, or with `s` (needed again after Ctrl+T reset). Shown only on the presenter.
 
