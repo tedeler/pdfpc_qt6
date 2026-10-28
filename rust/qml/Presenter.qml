@@ -195,6 +195,19 @@ ApplicationWindow {
                         visible: root.ctrl.blank || root.ctrl.frozen
                         z: 10
                     }
+
+                    // Bookmark on slides that are on the jump stack.
+                    Rectangle {
+                        id: stackMark
+                        visible: root.ctrl.current_on_stack && currentSlide.pageW > 8
+                        x: currentSlide.pageX + currentSlide.pageW - width - Math.max(6, currentSlide.pageW * 0.02)
+                        y: currentSlide.pageY
+                        width: Math.max(12, Math.min(22, currentSlide.pageW * 0.028))
+                        height: width * 1.55
+                        color: "#e6a23c"
+                        radius: 2
+                        z: 12
+                    }
                 }
 
                 SlideView {
@@ -209,6 +222,18 @@ ApplicationWindow {
                     interactive: false
                     ctrl: root.ctrl
                     opacity: root.ctrl.next_page >= 0 ? 1.0 : 0.35
+
+                    Rectangle {
+                        id: nextStackMark
+                        visible: root.ctrl.next_on_stack && nextSlide.pageW > 8
+                        x: nextSlide.pageX + nextSlide.pageW - width - Math.max(4, nextSlide.pageW * 0.02)
+                        y: nextSlide.pageY
+                        width: Math.max(8, Math.min(16, nextSlide.pageW * 0.04))
+                        height: width * 1.55
+                        color: "#e6a23c"
+                        radius: 2
+                        z: 12
+                    }
                 }
             }
 
@@ -311,8 +336,9 @@ ApplicationWindow {
         ["←  ↑  Backspace  Page Up", "Previous slide (normal, laser, and pen; right click in normal/laser)"],
         ["Shift+→ / Shift+←", "Jump forward / back 10 slides"],
         ["Home / End", "First / last slide"],
-        ["g, digits, Enter", "Go to slide (history if dwell ≥5s)"],
-        ["Click PDF link", "Jump to linked slide (history if dwell ≥5s)"],
+        ["g, digits, Enter", "Go to slide (puts the left slide on the stack)"],
+        ["Click PDF link", "Jump to linked slide (puts the left slide on the stack)"],
+        ["m", "Mark this slide on the jump stack"],
         ["Ctrl+←", "History back"],
         ["Ctrl+→", "History forward"],
         ["j", "Jump history (≤9) with time since last visit"],
@@ -473,7 +499,7 @@ ApplicationWindow {
                     id: historyHint
                     visible: root.historyEntries.length === 0
                     width: parent.width
-                    text: "No jump targets yet.\nStay ≥5s on a slide, then leave it\n(arrow, link, or g)."
+                    text: "No jump targets yet.\nUse g, a PDF link, or m\nto put a slide on the stack."
                     color: "#a0a0a0"
                     font.pixelSize: historyFont.fontSize
                     wrapMode: Text.WordWrap
