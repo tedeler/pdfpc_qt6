@@ -260,11 +260,13 @@ Item {
     }
 
     MouseArea {
+        id: pageMouse
         anchors.fill: ink
         enabled: root.interactive
         acceptedButtons: Qt.LeftButton | Qt.RightButton
         hoverEnabled: root.interactive && root.ctrl.mode === 1
         cursorShape: root.ctrl.mode === 1 ? Qt.BlankCursor : Qt.ArrowCursor
+        z: 4
 
         property real pressX: 0
         property real pressY: 0
@@ -345,6 +347,49 @@ Item {
         onExited: {
             if (root.ctrl.mode === 1)
                 root.ctrl.pointerHide()
+        }
+    }
+
+    // Internal PDF links (e.g. Beamer TOC). Above pageMouse so a hit jumps
+    // instead of advancing a slide. Only in normal mouse mode.
+    Item {
+        id: linkLayer
+        x: root.pageX
+        y: root.pageY
+        width: root.pageW
+        height: root.pageH
+        visible: root.pageValid && paper.visible
+        z: 5
+        enabled: root.interactive && root.ctrl.mode === 0
+
+        readonly property real scaleX: width / Math.max(1, root.pointSize.width)
+        readonly property real scaleY: height / Math.max(1, root.pointSize.height)
+
+        PdfLinkModel {
+            id: linkModel
+            document: localDocument
+            page: root.frameIndex
+        }
+
+        Repeater {
+            model: linkModel
+            delegate: MouseArea {
+                required property rect rectangle
+                required property int page
+                required property url url
+
+                x: rectangle.x * linkLayer.scaleX
+                y: rectangle.y * linkLayer.scaleY
+                width: Math.max(1, rectangle.width * linkLayer.scaleX)
+                height: Math.max(1, rectangle.height * linkLayer.scaleY)
+                enabled: linkLayer.enabled && page >= 0
+                visible: enabled
+                acceptedButtons: Qt.LeftButton
+                cursorShape: Qt.PointingHandCursor
+                hoverEnabled: true
+
+                onClicked: root.ctrl.followLink(page)
+            }
         }
     }
 }

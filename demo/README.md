@@ -5,6 +5,7 @@ Beamer decks used to check that pdfpc matches a normal PDF viewer (e.g. Poppler/
 | File | Purpose |
 |---|---|
 | `pdfpc-demo.pdf` | Tiny 3-page smoke deck |
+| `beamer-links.pdf` | Clickable TOC for internal PDF links / history |
 | `beamer-default-white.pdf` | Explicit white canvas, math, lists |
 | `beamer-madrid.pdf` | Madrid theme (colored header/footer) |
 | `beamer-dark.pdf` | Black canvas / light text |
@@ -14,7 +15,7 @@ Rebuild:
 
 ```bash
 cd demo
-for f in pdfpc-demo beamer-default-white beamer-madrid beamer-dark beamer-boxes; do
+for f in pdfpc-demo beamer-links beamer-default-white beamer-madrid beamer-dark beamer-boxes; do
   pdflatex -interaction=nonstopmode "$f.tex"
 done
 ```
