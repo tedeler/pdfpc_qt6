@@ -1073,7 +1073,7 @@ impl qobject::Session {
         self.as_mut()
             .rust_mut()
             .nav_history
-            .store_page(cur, Instant::now());
+            .toggle_page(cur, Instant::now());
         self.sync_stack_marks();
     }
 

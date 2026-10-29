@@ -80,6 +80,19 @@ impl NavHistory {
         self.remember(page);
     }
 
+    pub fn toggle_page(&mut self, page: i32, now: Instant) {
+        if self.contains_page(page) {
+            // Seite ist im Stack: restlos entfernen
+            self.saved.remove(&page);
+            self.back.retain(|&p| p != page);
+            self.forward.retain(|&p| p != page);
+        } else {
+            // Seite ist nicht im Stack: speichern
+            self.note_visit(page, now);
+            self.remember(page);
+        }
+    }
+
     /// Step back. The page being left stays on the forward tail.
     /// A stored page that is still the current page is not a real step back.
     pub fn go_back(&mut self, current: i32, now: Instant) -> Option<i32> {
