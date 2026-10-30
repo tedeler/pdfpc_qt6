@@ -1,126 +1,106 @@
 # Navigation und History in pdfpc_qt6
 
-Dieses Dokument erklärt den History-Mechanismus der Anwendung in verständlicher Sprache. Es beschreibt nicht nur das technische Muster, sondern auch, warum es für eine PDF-Präsentationssoftware genau so umgesetzt ist.
+## Teil 1: Anwenderdoku
+
+Dieses Verhalten beschreibt, wie die Präsentationsnavigation in pdfpc_qt6 funktioniert. Es ist so gedacht, dass normale Präsentationsarbeit flüssig bleibt und gleichzeitig wichtige Sprünge sauber zurückverfolgbar sind.
+
+### 1.1 Grundidee
+
+Bei einer Präsentation gibt es zwei unterschiedliche Arten von Bewegung:
+
+- normales Vor- und Zurückgehen
+- echte Sprünge zu einem wichtigen Ziel
+
+Normales Blättern ist einfach der tägliche Präsentationsfluss: von Folie zu Folie, mit Pfeiltasten, mit der Tastatur oder mit einem Sprung von +/-10 Folien. Dadurch will man in der Regel nur schnell weiterkommen.
+
+Echte Sprünge sind dagegen Punkte, an denen man bewusst eine andere Stelle in der Präsentation anspringt, zum Beispiel:
+
+- per GoTo zu einer bestimmten Folie,
+- über ein internes PDF-Linkziel,
+- über eine Markierung auf dem Stack.
+
+Diese Sprünge sind für die Navigation wichtig und müssen sauber im Verlauf bleiben.
+
+### 1.2 Warum normales Blättern nicht wie ein Sprung behandelt werden soll
+
+Wenn jede Folie, die man mit der Pfeiltaste anspringt, als echter Sprung behandelt würde, wäre die Navigation schnell unbrauchbar:
+
+- der Verlauf würde mit jeder normalen Folie überladen,
+- der Vorwärts- und Rückwärts-Pfad wäre kaum noch aussagekräftig,
+- man würde wichtige Sprünge mit alltäglichem Blättern vermischen.
+
+Deshalb behandelt die Anwendung normales Blättern als reinen Ablauf und nicht als markanten Sprungpunkt.
+
+### 1.3 Was ist ein Stack-Eintrag?
+
+Ein Stack-Eintrag ist ein bewusst markierter Rückkehrpunkt. Er entsteht nur bei wichtigen Aktionen, zum Beispiel:
+
+- GoTo zu einer Seite,
+- Klick auf einen PDF-Link,
+- aktive Markierung einer Folie auf dem Stack.
+
+Diese Einträge sind für die Präsentation besonders wichtig, weil sie signalisieren: "An dieser Stelle wurde bewusst eine neue Richtung gewählt. Wenn ich später zurück gehe, soll ich diese Stelle nicht einfach als normalen Schritt behandeln."
+
+### 1.4 Was ist mit Back/Forward und normalen Schritten?
+
+Back/Forward und normale Schritt-Navigationen sind Teil des Ablaufverlaufs. Sie ändern die aktuelle Position, aber sie erzeugen keinen neuen bedeutenden Stack-Punkt.
+
+Das ist wichtig, weil Back/Forward die Reise durch die bereits gesehenen Seiten zeigen soll, nicht aber jedes einzelne Blättern als neue historische Markierung festhalten.
+
+### 1.5 Was passiert im Alltag?
+
+Ein typischer Ablauf sieht so aus:
+
+1. Der Vortrag beginnt auf Folie 1.
+2. Der Nutzer geht normal weiter: 2, 3, 4, 5.
+3. Er klickt auf ein internes PDF-Link auf Folie 20.
+4. Er geht mit Back zurück auf die vorherige Stelle.
+5. Er möchte später wieder an die Stelle gelangen, an der er den Link aufgerufen hat.
+
+Die App soll dabei so arbeiten:
+
+- der normale Verlauf von Folie 2 bis 5 ist kein wichtiger Sprungpunkt,
+- der Link auf Folie 20 ist ein echter Sprungpunkt,
+- Back/Forward zeigt den Verlauf an, ohne den Ablauf mit irrelevanten Schritten zu überladen.
+
+Das macht die Navigation verständlich und stabil.
+
+### 1.6 Warum ist das für die Präsentationsarbeit gut?
+
+Es schafft eine saubere Trennung zwischen:
+
+- Alltag der Präsentation,
+- bewussten Navigationen,
+- Verlauf der zuletzt besuchten Punkte,
+- wichtigen Sprungzielen.
+
+Das bedeutet:
+
+- das normale Vorwärtsblättern bleibt unaufdringlich,
+- wichtige Ziele bleiben nachvollziehbar,
+- der Verlauf bleibt konsistent,
+- der Benutzer kann gezielt zwischen interessanten Punkten springen, ohne dass alle normalen Folienwechsel den Stack verunreinigen.
 
 ---
 
-## 1. Warum dieses System überhaupt nötig ist
+## Teil 2: Technische Doku
 
-In einer Präsentationssoftware gibt es zwei sehr verschiedene Arten von Bewegung zwischen Folien:
+Die technische Umsetzung sitzt in den Dateien `rust/src/nav_history.rs` und `rust/src/session.rs`.
 
-1. Normales Vor- und Zurückgehen
-   - z. B. nächste Folie, vorige Folie, 10 Slides vor/zurück
-   - Das ist einfach "ich sehe weiter"
+### 2.1 Die grundlegende Unterscheidung
 
-2. Bedeutende Sprünge
-   - z. B. in ein PDF-Links-Ziel
-   - z. B. per GoTo zu einer bestimmten Folie
-   - z. B. markierte Folien auf dem Stack
-   - Das sind "ich habe einen expliziten Zielpunkt gewählt"
-
-Wenn man beide Mischformen in denselben Verlauf stecken würde, wäre die History-Logik schnell verwirrend. Ein normaler Folienwechsel darf nicht wie ein bewusster Sprung behandelt werden. Sonst würde die App beim normalen Blättern ständig den Rück-/Vorwärts-Pfad zerstören.
-
-Das ist genau der Grund, warum die Anwendung in `LeaveKind` unterscheidet:
-
-- normale Schritte
-- history-walks
-- echte Sprünge
-- Menü-/Stack-Sprünge
-
----
-
-## 2. Die zentrale Idee: nicht jede Folienbewegung erzeugt einen Stack-Eintrag
-
-Die Anwendung unterscheidet drei Arten von Bewegung:
-
-| Art | Beispiel | Effekt auf History-Stack |
-|---|---|---|
-| Normaler Schritt | nächste Folie, vorherige Folie, +/-10 | kein neuer Stack-Eintrag |
-| History-Walk | Zurück/Weiter im Navigationspfad | kein neuer Stack-Eintrag |
-| Echte Sprünge | GoTo, PDF-Link, Markierung | neuer Stack-Eintrag |
-| Menü-Sprung | Auswahl aus dem J-Menü | forward-tail wird verworfen, aber kein normaler Stack-Eintrag |
-
-Das ist ein sehr wichtiges Designprinzip: Nur wirklich bedeutende Sprünge sollten den Navigationspfad beeinflussen.
-
-Wenn man nur vorwärts durch die Folien geht, ist das kein "Zielpunkt" im Sinne der Historie. Es ist einfach der normale Ablauf einer Präsentation.
-
----
-
-## 3. Was die Anwendung in der Praxis bedeutet
-
-Stellen Sie sich eine Präsentation vor:
-
-- Sie sind auf Folie 12
-- Sie öffnen ein PDF-TOC-Link auf Folie 27
-- Sie gehen mit Pfeil zurück
-- Sie wollen danach wieder zu Folie 27 bzw. zu den vorherigen sinnvollen Stellen gelangen
-
-In einer guten Präsentations-UI sollte das so funktionieren:
-
-- Der Sprung auf Folie 27 ist ein echter "jump"
-- Der normale Rückweg durch die Folien ist nur informativ
-- Der Vorwärts-Pfad darf aber nicht einfach verloren gehen
-
-Das Verhalten ist deshalb ähnlich wie bei einem Browser:
-
-- Ein normaler Seitenwechsel ist kein gespeicherter Sprungpunkt
-- Ein Klick auf ein internes PDF-Ziel ist ein echter Sprungpunkt
-- Ein Rück-/Vorwärtslauf innerhalb der Präsentation ist nur ein Verlauf des bisherigen Pfads
-
----
-
-## 4. Die drei Hauptzustände der Logik
-
-Die Anwendung verwaltet intern drei Arten von Informationen:
-
-### 4.1 back
-Das ist die Reihenfolge der Seiten, die du hinter dir gelassen hast.
-
-```text
-back = [0, 2, 5, 9]
-```
-
-Das bedeutet: Du hast dich von 0 über 2, 5 und 9 bewegt; diese Seiten sind im Verlauf hinter dir.
-
-### 4.2 forward
-Das ist der Teil des Pfads, den du noch "vor dir" hättest, wenn du nach hinten gegangen bist.
-
-```text
-forward = [11, 13]
-```
-
-Das bedeutet: Wenn du nach vorne gehst, kannst du wieder zu 11 und 13.
-
-### 4.3 saved
-Das sind markierte oder wichtige Stellen, die bewusst im Stack bleiben sollen.
-
-```text
-saved = {3, 10, 27}
-```
-
-Das sind keine zufälligen Folien, sondern Seiten, die als sinnvolle Sprungziele festgehalten werden.
-
-### 4.4 last_visited
-F��r jede Seite wird gespeichert, wann sie zuletzt besucht wurde.
-
-Das wird im J-Menü verwendet, um die zuletzt besuchten Seiten oben anzuzeigen.
-
----
-
-## 5. Die vier Navigationstypen im Code
-
-Im Code werden die Navigationsarten als `LeaveKind` modelliert:
+Im Code gibt es ein Enum, das die Art der Navigation beschreibt:
 
 ```rust
 enum LeaveKind {
-    Stack,   // Go-to / PDF-Link / Stack-Markierung
-    Menu,    // J-Menü-Auswahl
+    Stack,   // Go-to / PDF-Link / explizite Markierung
+    Menu,    // Auswahl aus dem J-Menü
     Step,    // +/-1 / +/-10
     History, // Back/Forward-History
 }
 ```
 
-Dann wird entschieden, ob dieser Vorgang den Stack beeinflusst:
+Danach entscheidet die App, ob die aktuelle Bewegung den Stack beeinflusst:
 
 ```rust
 fn stack_action(kind: LeaveKind) -> StackAction {
@@ -132,62 +112,73 @@ fn stack_action(kind: LeaveKind) -> StackAction {
 }
 ```
 
-Das ist der eigentliche Kern: 
+Das ist der Kern der Logik:
 
-- `Stack` => hier wird ein echter Eintrag angelegt
-- `Menu` => der forward-tail wird verworfen, aber kein normaler Eintrag erzeugt
-- `Step` => nur eine normale Folienbewegung, kein Stack-Eintrag
-- `History` => ebenfalls kein Stack-Eintrag
+- `Stack` erzeugt einen echten Eintrag
+- `Menu` verwirft den Forward-Tail, aber erzeugt keinen normalen Eintrag
+- `Step` erzeugt keinen Stack-Eintrag
+- `History` erzeugt keinen Stack-Eintrag
 
----
+### 2.2 Normales Blättern: keine Stack-Markierung
 
-## 6. Was genau bedeutet das für die Anwendung?
-
-### 6.1 Normales Blättern = kein Stack-Eintrag
-
-Wenn der Nutzer mit den Pfeiltasten durch die Präsentation geht, passiert das in `jump_pages()`:
+Die normalen Seitenwechsel werden als `LeaveKind::Step` behandelt:
 
 ```rust
-self.go_to_page(target, LeaveKind::Step);
+pub fn next_page_action(self: Pin<&mut Self>) {
+    self.jump_pages(1);
+}
+
+pub fn prev_page_action(self: Pin<&mut Self>) {
+    self.jump_pages(-1);
+}
+
+fn jump_pages(self: Pin<&mut Self>, delta: i32) {
+    let Some(target) = page_after_jump(cur, count, delta) else {
+        return;
+    };
+    self.go_to_page(target, LeaveKind::Step);
+}
 ```
 
-`LeaveKind::Step` ist in `stack_action()` ausdrücklich als `None` definiert. Das heißt:
+Damit gilt für `+/-1` und `+/-10`:
 
-- Folie 12 -> 13 -> 14
-- keine Markierung im Stack
-- keine neue History-Position als “bedeutender Punkt"
+- normaler Seitenwechsel
+- kein Stack-Eintrag
+- kein wichtiges Sprungziel
 
-Das ist korrekt, weil das ganz normaler Präsentationsfluss ist.
+Die gleiche Logik gilt für die Tastensteuerung, etwa Pfeil rechts, links, Space, PageUp und PageDown.
 
-Das gleiche gilt für `+/-10`-Sprünge:
+### 2.3 History-Back und History-Forward: Verlauf, aber kein Stack-Eintrag
+
+Hier ist das Verhalten ebenfalls bewusst getrennt:
 
 ```rust
-KEY_RIGHT => Some(if shift { PAGE_SKIP } else { 1 }),
-KEY_LEFT => Some(if shift { -PAGE_SKIP } else { -1 }),
+pub fn history_back(...) {
+    let target = self.as_mut().rust_mut().nav_history.go_back(cur, Instant::now());
+    if let Some(target) = target {
+        self.apply_history_page(target);
+    }
+}
+
+pub fn history_forward(...) {
+    let target = self.as_mut().rust_mut().nav_history.go_forward(cur, Instant::now());
+    if let Some(target) = target {
+        self.apply_history_page(target);
+    }
+}
+
+fn apply_history_page(self: Pin<&mut Self>, target: i32) {
+    self.go_to_page(target, LeaveKind::History);
+}
 ```
 
-`PAGE_SKIP` ist 10. Auch das ist nur ein normaler Schritt, kein wahrer jump.
+Machen wir die Semantik explizit:
 
-### 6.2 History-Befehle = kein Stack-Eintrag
+- Back/Forward verändert den Verlauf
+- Back/Forward erzeugt keinen neuen Stack-Punkt
+- der Verlauf bleibt konsistent, aber er ist kein defaultmäßiger Jump-Stack
 
-Back/Forward in der History sind ebenfalls keine Stack-Positionen. Sie verändern nur den Verlauf:
-
-```rust
-pub fn history_back(...) { ... }
-pub fn history_forward(...) { ... }
-```
-
-Der Aufruf führt zu:
-
-```rust
-self.go_to_page(target, LeaveKind::History);
-```
-
-Und `History` ist ebenfalls `StackAction::None`.
-
-Das ist logisch: History ist ein Verlauf, aber kein bedeutender Sprungpunkt wie ein PDF-Link oder ein manuell markierter Stack-Eintrag.
-
-### 6.3 GoTo, PDF-Link, Marker = echter Stack-Eintrag
+### 2.4 Echte Sprünge: GoTo, PDF-Link, Stack-Markierung
 
 Ein echter Sprung wird als `LeaveKind::Stack` behandelt:
 
@@ -199,19 +190,23 @@ fn stack_jump(self: Pin<&mut Self>, target: i32) {
 
 Das passiert bei:
 
-- GoTo (`g`)
-- PDF-Link-Klick
-- expliziter Stack-Markierung (`m`)
+- `g` (GoTo)
+- Klick auf eine interne PDF-Linkseite
+- explizitem Markieren mit `m`
 
-Diese Art von Navigation ist für die Anwendung besonders wichtig, weil sie einen sinnvollen Rückkehrpunkt definiert.
+In diesem Fall gilt:
 
-Beispiel:
-- von Folie 3 auf eine Beamer-TOC-Folie springen
-- dann zurück zu der Folie, von der aus du gestartet bist
+```rust
+LeaveKind::Stack => StackAction::RecordAndTruncate
+```
 
-Das muss in der History sauber funktionieren.
+Das bedeutet:
 
-### 6.4 J-Menü = verwirft den forward-tail, aber keine normale Markierung
+- die aktuelle Seite wird als wirklicher Sprungpunkt notiert,
+- der Forward-Tail wird verworfen,
+- der Verlauf bleibt sinnvoll und auf bedeutende Punkte fokussiert.
+
+### 2.5 J-Menü: verwirft nur den Forward-Tail
 
 Beim J-Menü wird `LeaveKind::Menu` verwendet:
 
@@ -221,37 +216,36 @@ fn menu_jump(self: Pin<&mut Self>, target: i32) {
 }
 ```
 
-Das entspricht `TruncateOnly`:
-- der zukünftige Verlauf wird verworfen
-- aber keine neue Stack-Markierung wird hinzugefügt
+Damit gilt:
 
-Das ist genau sinnvoll: Das Menü ist eine Auswahl aus vorhandenen Zielen, kein neuer bedeutender Punkt.
+```rust
+LeaveKind::Menu => StackAction::TruncateOnly
+```
+
+Das heißt:
+
+- der bisherige Future-/Forward-Pfad wird verworfen,
+- aber es wird kein normaler Stack-Eintrag erzeugt,
+- die Auswahl kommt aus dem bestehenden Verlauf und ist keine neue markante Ziel-Position.
+
+### 2.6 Warum diese Trennung wichtig ist
+
+Der besondere Punkt ist die Trennung zwischen:
+
+- "normal dahinblättern",
+- "bewusst springen",
+- "im Verlauf zurückgehen",
+- "aus einer Auswahl einen bestimmten Zielpunkt wählen".
+
+Diese Trennung ist in der Anwendung nicht zufällig, sondern eine bewusste Modellierung der Präsentationsarbeit:
+
+- normale Darstellung und Bewegung sollen die Stack-Logik nicht verunreinigen,
+- echte Zielpunkte sollen sich sauber als Sprungpunkte verhalten,
+- der Rück-/Vorwärts-Verlauf bleibt trotzdem nachvollziehbar.
 
 ---
 
-## 7. Ein konkretes Beispiel aus der Anwendung
-
-Angenommen, der Nutzer arbeitet so:
-
-1. Er beginnt auf Folie 1
-2. Er geht auf Folie 2, 3, 4, 5 (normale Schritte)
-3. Er klickt auf einen internen PDF-Link auf Folie 20
-4. Er geht wieder zurück auf Folie 5
-5. Er will den zurückliegenden Pfad wieder so sehen, wie er vor dem Link war
-
-Ohne diese Unterscheidung würde die normale Folge von Folien 2,3,4,5 als "bedeutender Jump" behandelt werden. Das wäre falsch. In der Anwendung ist das nicht erwünscht.
-
-Die Logik macht genau das Richtige:
-
-- normales Blättern erzeugt keine Stack-Position
-- der PDF-Link erzeugt einen echten Stack-Eintrag
-- der Rück-/Vorwärts-History-Walk bewegt sich durch Verlauf, ohne als neuer Stack-Punkt zu gelten
-
-Damit bleibt die sogenannte "jump stack" sauber und nützlich.
-
----
-
-## 8. Kleine Visualisierung des Ablaufs
+## 3. Übersicht des Verhaltens
 
 ```text
 Normale Schritt-Navigation:
@@ -276,38 +270,18 @@ History-Forward:
 
 ---
 
-## 9. Warum dieses Design gut ist
+## 4. Zusammenfassung
 
-Das ist ein sehr gutes Design für eine Präsentationssoftware, weil es eine klare Trennung macht zwischen:
+Die Architektur trennt sauber zwischen:
 
-- alltäglichem Folienfluss
-- bewusster Sprungnavigation
-- Verlauf von bereits besuchten Punkten
+- normalem Folienfluss,
+- meaningful jumps,
+- Verlaufserinnerung,
+- bewusst gewählten Zielen.
 
-Das verhindert zwei typische Fehler:
+Das ist genau das Verhalten, das für eine Präsentationssoftware sinnvoll ist: Der Nutzer soll nicht mit jeder normalen Folienbewegung den Stack verwirren, aber wichtige Sprünge sollen nach wie vor sauber zurückverfolgbar bleiben.
 
-1. Der normale Folienfluss füllt den Stack mit irrelevanten Einträgen
-2. Ein PDF-Link wird als "nur ein Schritt" behandelt und verliert dadurch seine Bedeutung
-
-Die Anwendung löst genau dieses Problem elegant.
-
----
-
-## 10. Kurzfazit
-
-Die Logik ist bewusst so gebaut, dass nur wirklich sinnvolle Sprünge den Stack beeinflussen. Der normale Folienbetrieb und der History-Verlauf sind von den "bedeutenden" Jump-Zielen getrennt.
-
-Das Ergebnis ist:
-
-- `+/-1` und `+/-10` sind fließende Präsentationsbewegungen, kein Stack-Eintrag
-- History zurück/vorwärts ist Verlauf, kein Stack-Eintrag
-- GoTo, PDF-Link und Markierung sind echte Sprünge und erzeugen daher einen Stack-Eintrag
-
-Das ist exakt die richtige Semantik für eine PDF-Präsentations-Anwendung.
-
----
-
-## 11. Relevante Stellen im Code
+Die Kernstellen im Code:
 
 - `rust/src/nav_history.rs`
   - `LeaveKind`
@@ -323,4 +297,4 @@ Das ist exakt die richtige Semantik für eine PDF-Präsentations-Anwendung.
   - `history_forward()`
   - `go_to_page()`
 
-Diese Stellen zeigen die konkrete Anwendung der oben beschriebenen Regeln.
+Diese Stellen zeigen die genaue Umsetzung des beschriebenen Verhaltens.
