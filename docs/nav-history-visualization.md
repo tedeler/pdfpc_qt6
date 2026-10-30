@@ -21,6 +21,14 @@ Echte Sprünge sind dagegen Punkte, an denen man bewusst eine andere Stelle in d
 
 Diese Sprünge sind für die Navigation wichtig und müssen sauber im Verlauf bleiben.
 
+```mermaid
+flowchart LR
+    A[Normales Blättern] --> B[kein besonderer Sprungpunkt]
+    C[GoTo / PDF-Link / Stack-Markierung] --> D[wichtiger Sprungpunkt]
+    B --> E[läuft als normaler Ablauf]
+    D --> F[bleibt im Stack / Verlauf erhalten]
+```
+
 ### 1.2 Warum normales Blättern nicht wie ein Sprung behandelt werden soll
 
 Wenn jede Folie, die man mit der Pfeiltaste anspringt, als echter Sprung behandelt würde, wäre die Navigation schnell unbrauchbar:
@@ -30,6 +38,14 @@ Wenn jede Folie, die man mit der Pfeiltaste anspringt, als echter Sprung behande
 - man würde wichtige Sprünge mit alltäglichem Blättern vermischen.
 
 Deshalb behandelt die Anwendung normales Blättern als reinen Ablauf und nicht als markanten Sprungpunkt.
+
+```mermaid
+flowchart TD
+    A[Normales Blättern] --> B[keine neue Stack-Markierung]
+    C[GoTo / PDF-Link / markierte Stelle] --> D[neue bedeutende Position]
+    B --> E[Verlauf bleibt übersichtlich]
+    D --> F[Sprung bleibt verständlich nachvollziehbar]
+```
 
 ### 1.3 Was ist ein Stack-Eintrag?
 
@@ -46,6 +62,21 @@ Diese Einträge sind für die Präsentation besonders wichtig, weil sie signalis
 Back/Forward und normale Schritt-Navigationen sind Teil des Ablaufverlaufs. Sie ändern die aktuelle Position, aber sie erzeugen keinen neuen bedeutenden Stack-Punkt.
 
 Das ist wichtig, weil Back/Forward die Reise durch die bereits gesehenen Seiten zeigen soll, nicht aber jedes einzelne Blättern als neue historische Markierung festhalten.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant App
+    participant History
+
+    User->>App: nächste Folie
+    App->>History: normaler Schritt
+    History-->>App: kein neuer Stack-Eintrag
+
+    User->>App: PDF-Link öffnen
+    App->>History: echter Sprung
+    History-->>App: neuer Stack-Eintrag
+```
 
 ### 1.5 Was passiert im Alltag?
 
@@ -119,6 +150,25 @@ Das ist der Kern der Logik:
 - `Step` erzeugt keinen Stack-Eintrag
 - `History` erzeugt keinen Stack-Eintrag
 
+```mermaid
+flowchart LR
+    A[Navigation request] --> B{Art der Navigation}
+
+    B -->|GoTo / PDF-Link / Markierung| C[LeaveKind::Stack]
+    B -->|J-Menü| D[LeaveKind::Menu]
+    B -->|+/-1 / +/-10| E[LeaveKind::Step]
+    B -->|Back/Forward History| F[LeaveKind::History]
+
+    C --> G[StackAction::RecordAndTruncate]
+    D --> H[StackAction::TruncateOnly]
+    E --> I[StackAction::None]
+    F --> I
+
+    G --> J[neuer Stack-Eintrag]
+    H --> K[forward-tail verworfen]
+    I --> L[kein Stack-Eintrag]
+```
+
 ### 2.2 Normales Blättern: keine Stack-Markierung
 
 Die normalen Seitenwechsel werden als `LeaveKind::Step` behandelt:
@@ -178,6 +228,23 @@ Machen wir die Semantik explizit:
 - Back/Forward erzeugt keinen neuen Stack-Punkt
 - der Verlauf bleibt konsistent, aber er ist kein defaultmäßiger Jump-Stack
 
+```mermaid
+sequenceDiagram
+    participant User
+    participant Session
+    participant History
+
+    User->>Session: history_back()
+    Session->>History: go_back(current)
+    History-->>Session: Verlauf verschiebt sich
+    Session-->>User: kein neuer Stack-Eintrag
+
+    User->>Session: history_forward()
+    Session->>History: go_forward(current)
+    History-->>Session: Verlauf wird wiederhergestellt
+    Session-->>User: kein neuer Stack-Eintrag
+```
+
 ### 2.4 Echte Sprünge: GoTo, PDF-Link, Stack-Markierung
 
 Ein echter Sprung wird als `LeaveKind::Stack` behandelt:
@@ -206,6 +273,18 @@ Das bedeutet:
 - der Forward-Tail wird verworfen,
 - der Verlauf bleibt sinnvoll und auf bedeutende Punkte fokussiert.
 
+```mermaid
+sequenceDiagram
+    participant User
+    participant Session
+    participant History
+
+    User->>Session: PDF-Link oder GoTo
+    Session->>History: go_to_page(target, LeaveKind::Stack)
+    History-->>Session: StackAction::RecordAndTruncate
+    Session-->>User: neuer Stack-Eintrag + forward-tail verworfen
+```
+
 ### 2.5 J-Menü: verwirft nur den Forward-Tail
 
 Beim J-Menü wird `LeaveKind::Menu` verwendet:
@@ -227,6 +306,13 @@ Das heißt:
 - der bisherige Future-/Forward-Pfad wird verworfen,
 - aber es wird kein normaler Stack-Eintrag erzeugt,
 - die Auswahl kommt aus dem bestehenden Verlauf und ist keine neue markante Ziel-Position.
+
+```mermaid
+flowchart LR
+    A[Pick aus J-Menü] --> B[LeaveKind::Menu]
+    B --> C[forward-tail wird verworfen]
+    C --> D[kein neuer normaler Stack-Eintrag]
+```
 
 ### 2.6 Warum diese Trennung wichtig ist
 
@@ -266,6 +352,15 @@ History-Forward:
   12 -> 27
   => kein neuer Stack-Eintrag
   => Verlauf wiederherstellen
+```
+
+```mermaid
+flowchart TD
+    A[Navigationstyp] --> B{Wichtiger Sprung?}
+    B -->|Nein| C[normaler Schritt / History]
+    B -->|Ja| D[GoTo / PDF-Link / Stack-Markierung]
+    C --> E[kein Stack-Eintrag]
+    D --> F[Stack-Eintrag + forward-tail verworfen]
 ```
 
 ---
