@@ -53,6 +53,122 @@ ApplicationWindow {
             spacing: 10
             padding: 4
 
+            Item {
+                width: 312
+                height: 136
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius: 10
+                    color: "#eaf0f7"
+                }
+
+                Rectangle {
+                    x: 18
+                    y: 16
+                    width: 190
+                    height: 104
+                    radius: 4
+                    color: "#ffffff"
+
+                    Text {
+                        x: 12
+                        y: 10
+                        text: "PDF PRESENTATION"
+                        color: "#55708f"
+                        font.pixelSize: 8
+                        font.bold: true
+                    }
+                    Text {
+                        x: 12
+                        y: 25
+                        text: "Present with confidence"
+                        color: "#1b4f8a"
+                        font.pixelSize: 11
+                        font.bold: true
+                    }
+                    Rectangle {
+                        x: 12
+                        y: 45
+                        width: 92
+                        height: 3
+                        radius: 1
+                        color: "#c5d3e2"
+                    }
+                    Rectangle {
+                        x: 12
+                        y: 53
+                        width: 67
+                        height: 3
+                        radius: 1
+                        color: "#c5d3e2"
+                    }
+                    Repeater {
+                        model: 4
+                        delegate: Rectangle {
+                            required property int index
+                            x: 116 + index * 15
+                            width: 10
+                            height: 16 + index * 8
+                            y: 90 - height
+                            radius: 2
+                            color: index === 3 ? "#e53935" : "#7ea3ca"
+                        }
+                    }
+                }
+
+                Rectangle {
+                    x: 96
+                    y: 120
+                    width: 34
+                    height: 4
+                    radius: 2
+                    color: "#9cabbc"
+                }
+
+                Rectangle {
+                    x: 220
+                    y: 30
+                    width: 74
+                    height: 76
+                    radius: 5
+                    color: "#ffffff"
+                    border.color: "#d3dce6"
+
+                    Text {
+                        x: 8
+                        y: 8
+                        text: "NOTES"
+                        color: "#55708f"
+                        font.pixelSize: 8
+                        font.bold: true
+                    }
+                    Repeater {
+                        model: 4
+                        delegate: Rectangle {
+                            required property int index
+                            x: 8
+                            y: 24 + index * 10
+                            width: index === 3 ? 36 : 52
+                            height: 3
+                            radius: 1
+                            color: "#c5d3e2"
+                        }
+                    }
+                }
+
+                Rectangle {
+                    x: 195
+                    y: 75
+                    width: 12
+                    height: 12
+                    radius: 6
+                    color: "#e53935"
+                    border.color: "#ffffff"
+                    border.width: 2
+                }
+            }
+
             Label {
                 text: "pdfpc-qt6"
                 font.pixelSize: 20
