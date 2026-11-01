@@ -72,6 +72,8 @@ pdfpc-qt6 [--windowed|-w] [presentation.pdf]
 
 Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin) pdfpc therefore moves the presenter window with a short-lived KWin script loaded over D-Bus (`org.kde.KWin /Scripting`). On other Wayland compositors the presenter is pulled onto its screen with a brief fullscreen request at startup; after `Shift+S` it may stay where the compositor puts it. Under X11 (`QT_QPA_PLATFORM=xcb`) the position is set directly. The fullscreen audience view is assigned to its output via the normal fullscreen request everywhere.
 
+Platform-specific window behavior is isolated behind the QML window-integration contract. Linux selects the Wayland/KWin implementation; other Qt platforms use the native-window implementation. This keeps KWin and compositor workarounds out of the presentation controls and provides a seam for future platform-specific backends.
+
 ## Keys
 
 | Key | Action |
