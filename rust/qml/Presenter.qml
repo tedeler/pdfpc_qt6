@@ -37,6 +37,36 @@ ApplicationWindow {
         }
     }
 
+    property var desktopPlacer: null
+    readonly property int desktopCount: desktopPlacer ? desktopPlacer.desktopCount() : 0
+
+    header: ToolBar {
+        visible: root.desktopCount > 1
+        height: visible ? implicitHeight : 0
+        Row {
+            spacing: 4
+            Label {
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Desktop:")
+            }
+            Repeater {
+                model: root.desktopCount
+                delegate: ToolButton {
+                    required property int index
+                    text: String(index + 1)
+                    icon.name: "preferences-desktop"
+                    display: AbstractButton.TextBesideIcon
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Move presentation to desktop %1").arg(index + 1)
+                    onClicked: {
+                        root.desktopPlacer.moveToDesktop(index + 1)
+                        focusScope.forceActiveFocus()
+                    }
+                }
+            }
+        }
+    }
+
     Dialog {
         id: aboutDialog
         title: qsTr("About pdfpc-qt6")
