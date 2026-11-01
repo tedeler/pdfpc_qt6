@@ -32,27 +32,27 @@ pub struct JumpTarget {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct NavHistory {
-    back: VecDeque<i32>,
-    forward: VecDeque<i32>,
+pub struct Trail {
+    trail_back: VecDeque<i32>,
+    trail_forward: VecDeque<i32>,
     /// When the user was last on this page (arrival or departure).
     last_visited: HashMap<i32, Instant>,
     /// Pages placed by go-to, a PDF link, or the store key.
-    /// Trail walks can also leave a page in `back` or `forward`.
-    saved: HashSet<i32>,
+    /// Trail walks can also leave a page in `trail_back` or `trail_forward`.
+    marked: HashSet<i32>,
 }
 
-impl NavHistory {
+impl Trail {
     pub fn clear(&mut self) {
-        self.back.clear();
-        self.forward.clear();
+        self.trail_back.clear();
+        self.trail_forward.clear();
         self.last_visited.clear();
-        self.saved.clear();
+        self.marked.clear();
     }
 
-    /// True when `page` is on the stack (saved, or sitting in either trail).
+    /// True when `page` is on the stack (marked, or sitting in either trail).
     pub fn contains_page(&self, page: i32) -> bool {
-        self.saved.contains(&page) || self.back.contains(&page) || self.forward.contains(&page)
+        self.marked.contains(&page) || self.trail_back.contains(&page) || self.trail_forward.contains(&page)
     }
 
     /// Remember that `page` was visited at `now`. Does not push the stack.
@@ -64,7 +64,7 @@ impl NavHistory {
     /// `from` is kept on the back stack when `record_from` is set
     /// (go-to or a PDF link — not a sequential step).
     pub fn begin_new_jump(&mut self, from: i32, now: Instant, record_from: bool) {
-        let dropped: Vec<i32> = self.forward.drain(..).collect();
+        let dropped: Vec<i32> = self.trail_forward.drain(..).collect();
         self.note_visit(from, now);
         if record_from {
             self.remember(from);
@@ -75,17 +75,17 @@ impl NavHistory {
     }
 
     /// Put `page` on the stack without moving and without dropping the forward tail.
-    pub fn store_page(&mut self, page: i32, now: Instant) {
+    pub fn mark_page(&mut self, page: i32, now: Instant) {
         self.note_visit(page, now);
         self.remember(page);
     }
 
-    pub fn toggle_page(&mut self, page: i32, now: Instant) {
+    pub fn toggle_mark(&mut self, page: i32, now: Instant) {
         if self.contains_page(page) {
             // Seite ist im Stack: restlos entfernen
-            self.saved.remove(&page);
-            self.back.retain(|&p| p != page);
-            self.forward.retain(|&p| p != page);
+            self.marked.remove(&page);
+            self.trail_back.retain(|&p| p != page);
+            self.trail_forward.retain(|&p| p != page);
         } else {
             // Seite ist nicht im Stack: speichern
             self.note_visit(page, now);
@@ -95,49 +95,55 @@ impl NavHistory {
 
     /// Step back. The page being left stays on the forward tail.
     /// A stored page that is still the current page is not a real step back.
-    pub fn go_back(&mut self, current: i32, now: Instant) -> Option<i32> {
-        let peeled = self.back.back() == Some(&current);
+    pub fn step_trail_back(&mut self, current: i32, now: Instant) -> Option<i32> {
+        let peeled = self.trail_back.back() == Some(&current);
         if peeled {
-            self.back.pop_back();
+            self.trail_back.pop_back();
         }
-        let Some(target) = self.back.pop_back() else {
+        let Some(target) = self.trail_back.pop_back() else {
             if peeled {
-                self.back.push_back(current);
+                self.trail_back.push_back(current);
             }
             return None;
         };
         self.note_visit(current, now);
-        self.forward.push_back(current);
-        trim_front(&mut self.forward, &mut self.saved, &self.back);
+        self.trail_forward.retain(|&p| p != current);
+        self.trail_forward.push_back(current);
+        trim_front(&mut self.trail_forward, &mut self.marked, &self.trail_back);
         self.note_visit(target, now);
         Some(target)
     }
 
     /// Step forward. The page being left stays on the back stack.
-    pub fn go_forward(&mut self, current: i32, now: Instant) -> Option<i32> {
-        let target = self.forward.pop_back()?;
+    pub fn step_trail_forward(&mut self, current: i32, now: Instant) -> Option<i32> {
+        // Peel entries for the page we are already on (reached by stepping).
+        while self.trail_forward.back() == Some(&current) {
+            self.trail_forward.pop_back();
+        }
+        let target = self.trail_forward.pop_back()?;
         self.note_visit(current, now);
-        self.back.push_back(current);
-        trim_front(&mut self.back, &mut self.saved, &self.forward);
+        self.trail_back.retain(|&p| p != current);
+        self.trail_back.push_back(current);
+        trim_front(&mut self.trail_back, &mut self.marked, &self.trail_forward);
         self.note_visit(target, now);
         Some(target)
     }
 
     fn remember(&mut self, page: i32) {
-        self.saved.insert(page);
-        if self.back.back() == Some(&page) || self.forward.contains(&page) {
+        self.marked.insert(page);
+        if self.trail_back.back() == Some(&page) || self.trail_forward.contains(&page) {
             return;
         }
-        if self.back.contains(&page) {
+        if self.trail_back.contains(&page) {
             return;
         }
-        self.back.push_back(page);
-        trim_front(&mut self.back, &mut self.saved, &self.forward);
+        self.trail_back.push_back(page);
+        trim_front(&mut self.trail_back, &mut self.marked, &self.trail_forward);
     }
 
     fn forget_if_untrailed(&mut self, page: i32) {
-        if !self.back.contains(&page) && !self.forward.contains(&page) {
-            self.saved.remove(&page);
+        if !self.trail_back.contains(&page) && !self.trail_forward.contains(&page) {
+            self.marked.remove(&page);
         }
     }
 
@@ -148,7 +154,7 @@ impl NavHistory {
         }
         let mut rank_of: HashMap<i32, usize> = HashMap::new();
         let mut rank = 0usize;
-        for page in self.back.iter().rev().chain(self.forward.iter().rev()) {
+        for page in self.trail_back.iter().rev().chain(self.trail_forward.iter().rev()) {
             if *page == current {
                 continue;
             }
@@ -179,13 +185,13 @@ impl NavHistory {
     }
 }
 
-fn trim_front(q: &mut VecDeque<i32>, saved: &mut HashSet<i32>, other: &VecDeque<i32>) {
+fn trim_front(q: &mut VecDeque<i32>, marked: &mut HashSet<i32>, other: &VecDeque<i32>) {
     while q.len() > NAV_HISTORY_MAX {
         let Some(page) = q.pop_front() else {
             break;
         };
         if !q.contains(&page) && !other.contains(&page) {
-            saved.remove(&page);
+            marked.remove(&page);
         }
     }
 }
@@ -217,82 +223,82 @@ mod tests {
     #[test]
     fn back_then_forward_returns_to_the_page_you_left() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(0, at(t, 0), true);
-        assert_eq!(h.go_back(5, at(t, 1)), Some(0));
-        assert_eq!(h.forward.iter().copied().collect::<Vec<_>>(), vec![5]);
-        assert_eq!(h.go_forward(0, at(t, 2)), Some(5));
-        assert!(h.forward.is_empty());
-        assert_eq!(h.go_back(5, at(t, 3)), Some(0));
-        assert_eq!(h.go_back(0, at(t, 4)), None);
+        assert_eq!(h.step_trail_back(5, at(t, 1)), Some(0));
+        assert_eq!(h.trail_forward.iter().copied().collect::<Vec<_>>(), vec![5]);
+        assert_eq!(h.step_trail_forward(0, at(t, 2)), Some(5));
+        assert!(h.trail_forward.is_empty());
+        assert_eq!(h.step_trail_back(5, at(t, 3)), Some(0));
+        assert_eq!(h.step_trail_back(0, at(t, 4)), None);
     }
 
     #[test]
     fn going_back_does_not_drop_the_forward_trail() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(0, at(t, 0), true);
         h.begin_new_jump(2, at(t, 1), true);
         h.begin_new_jump(4, at(t, 2), true);
         // On page 6. Two steps back must keep 6 and then 4 ahead of us.
-        assert_eq!(h.go_back(6, at(t, 3)), Some(4));
-        assert_eq!(h.go_back(4, at(t, 4)), Some(2));
-        assert_eq!(h.back.iter().copied().collect::<Vec<_>>(), vec![0]);
-        assert_eq!(h.forward.iter().copied().collect::<Vec<_>>(), vec![6, 4]);
-        assert_eq!(h.go_forward(2, at(t, 5)), Some(4));
-        assert_eq!(h.go_forward(4, at(t, 6)), Some(6));
-        assert!(h.forward.is_empty());
-        assert_eq!(h.back.iter().copied().collect::<Vec<_>>(), vec![0, 2, 4]);
+        assert_eq!(h.step_trail_back(6, at(t, 3)), Some(4));
+        assert_eq!(h.step_trail_back(4, at(t, 4)), Some(2));
+        assert_eq!(h.trail_back.iter().copied().collect::<Vec<_>>(), vec![0]);
+        assert_eq!(h.trail_forward.iter().copied().collect::<Vec<_>>(), vec![6, 4]);
+        assert_eq!(h.step_trail_forward(2, at(t, 5)), Some(4));
+        assert_eq!(h.step_trail_forward(4, at(t, 6)), Some(6));
+        assert!(h.trail_forward.is_empty());
+        assert_eq!(h.trail_back.iter().copied().collect::<Vec<_>>(), vec![0, 2, 4]);
     }
 
     #[test]
     fn new_jump_truncates_only_the_forward_tail() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(0, at(t, 0), true);
         h.begin_new_jump(2, at(t, 1), true);
         h.begin_new_jump(4, at(t, 2), true);
-        assert_eq!(h.go_back(6, at(t, 3)), Some(4));
-        assert_eq!(h.go_back(4, at(t, 4)), Some(2));
+        assert_eq!(h.step_trail_back(6, at(t, 3)), Some(4));
+        assert_eq!(h.step_trail_back(4, at(t, 4)), Some(2));
         // On 2, with 4 and 6 still ahead. Jumping to 9 abandons that tail only.
         h.begin_new_jump(2, at(t, 5), true);
-        assert!(h.forward.is_empty());
-        assert_eq!(h.back.iter().copied().collect::<Vec<_>>(), vec![0, 2]);
-        assert_eq!(h.go_forward(9, at(t, 6)), None);
-        assert_eq!(h.go_back(9, at(t, 7)), Some(2));
-        assert_eq!(h.go_back(2, at(t, 8)), Some(0));
+        assert!(h.trail_forward.is_empty());
+        assert_eq!(h.trail_back.iter().copied().collect::<Vec<_>>(), vec![0, 2]);
+        assert_eq!(h.step_trail_forward(9, at(t, 6)), None);
+        assert_eq!(h.step_trail_back(9, at(t, 7)), Some(2));
+        assert_eq!(h.step_trail_back(2, at(t, 8)), Some(0));
     }
 
     #[test]
     fn new_jump_without_dwell_still_truncates_forward_only() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(0, at(t, 0), true);
-        assert_eq!(h.go_back(3, at(t, 1)), Some(0));
+        assert_eq!(h.step_trail_back(3, at(t, 1)), Some(0));
         h.begin_new_jump(0, at(t, 2), false);
-        assert!(h.forward.is_empty());
-        assert!(h.back.is_empty());
+        assert!(h.trail_forward.is_empty());
+        assert!(h.trail_back.is_empty());
     }
 
     #[test]
     fn retains_at_least_100_entries() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         for i in 0..150 {
             h.begin_new_jump(i, at(t, i as u64), true);
         }
-        assert_eq!(h.back.len(), NAV_HISTORY_MAX);
-        assert_eq!(h.go_back(150, at(t, 200)), Some(149));
+        assert_eq!(h.trail_back.len(), NAV_HISTORY_MAX);
+        assert_eq!(h.step_trail_back(150, at(t, 200)), Some(149));
         for n in 0..(NAV_HISTORY_MAX - 1) {
-            assert!(h.go_back(0, at(t, 201 + n as u64)).is_some());
+            assert!(h.step_trail_back(0, at(t, 201 + n as u64)).is_some());
         }
-        assert_eq!(h.go_back(0, at(t, 400)), None);
+        assert_eq!(h.step_trail_back(0, at(t, 400)), None);
     }
 
     #[test]
     fn picker_is_capped_at_nine_most_recent_pages() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         for i in 0..12 {
             h.begin_new_jump(i, at(t, i as u64), true);
         }
@@ -306,7 +312,7 @@ mod tests {
     #[test]
     fn picker_skips_the_current_page_and_follows_last_visit() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(1, at(t, 0), true);
         h.begin_new_jump(3, at(t, 10), true);
         h.begin_new_jump(5, at(t, 20), true);
@@ -321,11 +327,11 @@ mod tests {
     #[test]
     fn forward_pages_stay_in_the_menu_after_going_back() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(1, at(t, 0), true);
         h.begin_new_jump(3, at(t, 5), true);
         h.begin_new_jump(5, at(t, 10), true);
-        assert_eq!(h.go_back(8, at(t, 15)), Some(5));
+        assert_eq!(h.step_trail_back(8, at(t, 15)), Some(5));
         let pages: Vec<i32> = h
             .picker_targets(9, 5)
             .iter()
@@ -337,6 +343,107 @@ mod tests {
         );
         assert!(pages.contains(&3));
         assert!(pages.contains(&1));
+    }
+
+    // Scenario tests. Notation: `back [..]` is trail_back (oldest first),
+    // `fwd [..]` is trail_forward (next page last).
+
+    fn v(q: &VecDeque<i32>) -> Vec<i32> {
+        q.iter().copied().collect()
+    }
+
+    #[test]
+    fn scenario_goto_chain_then_walk_back_and_forward() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        // Start on 0, g→10, g→20, g→30.
+        h.begin_new_jump(0, at(t, 0), true);
+        h.begin_new_jump(10, at(t, 1), true);
+        h.begin_new_jump(20, at(t, 2), true);
+        assert_eq!(v(&h.trail_back), vec![0, 10, 20]);
+        // Ctrl+← from 30 → 20 → 10; 30 and 20 wait ahead.
+        assert_eq!(h.step_trail_back(30, at(t, 3)), Some(20));
+        assert_eq!(h.step_trail_back(20, at(t, 4)), Some(10));
+        assert_eq!(v(&h.trail_back), vec![0]);
+        assert_eq!(v(&h.trail_forward), vec![30, 20]);
+        // Ctrl+→ retraces exactly.
+        assert_eq!(h.step_trail_forward(10, at(t, 5)), Some(20));
+        assert_eq!(h.step_trail_forward(20, at(t, 6)), Some(30));
+        assert_eq!(h.step_trail_forward(30, at(t, 7)), None);
+    }
+
+    #[test]
+    fn scenario_forward_after_stepping_onto_the_next_page_is_a_noop() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.begin_new_jump(0, at(t, 0), true);
+        assert_eq!(h.step_trail_back(5, at(t, 1)), Some(0));
+        // User pages 0→…→5 by hand, then presses Ctrl+→: nothing to walk to.
+        assert_eq!(h.step_trail_forward(5, at(t, 2)), None);
+        assert!(h.trail_forward.is_empty());
+        assert!(h.trail_back.is_empty());
+    }
+
+    #[test]
+    fn scenario_walking_never_duplicates_pages() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.begin_new_jump(0, at(t, 0), true);
+        h.begin_new_jump(2, at(t, 1), true);
+        for _ in 0..3 {
+            assert_eq!(h.step_trail_back(2, at(t, 2)), Some(0));
+            assert_eq!(h.step_trail_forward(0, at(t, 3)), Some(2));
+        }
+        assert_eq!(v(&h.trail_back), vec![0]);
+        assert!(h.trail_forward.is_empty());
+    }
+
+    #[test]
+    fn scenario_marking_a_page_ahead_keeps_forward_unique() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.begin_new_jump(0, at(t, 0), true);
+        h.begin_new_jump(1, at(t, 1), true);
+        assert_eq!(h.step_trail_back(6, at(t, 2)), Some(1));
+        // Paged to 6 by hand and marked it with `m`, then Ctrl+←.
+        h.mark_page(6, at(t, 3));
+        assert_eq!(h.step_trail_back(6, at(t, 4)), Some(0));
+        assert_eq!(v(&h.trail_forward), vec![6]);
+    }
+
+    #[test]
+    fn scenario_menu_jump_drops_forward_but_does_not_mark_the_page_left() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.begin_new_jump(0, at(t, 0), true);
+        h.begin_new_jump(4, at(t, 1), true);
+        assert_eq!(h.step_trail_back(8, at(t, 2)), Some(4));
+        h.begin_new_jump(4, at(t, 3), false);
+        assert!(h.trail_forward.is_empty());
+        assert_eq!(v(&h.trail_back), vec![0]);
+        assert!(!h.contains_page(8));
+    }
+
+    #[test]
+    fn scenario_toggle_mark_adds_and_removes_everywhere() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.toggle_mark(3, at(t, 0));
+        assert!(h.contains_page(3));
+        assert_eq!(v(&h.trail_back), vec![3]);
+        h.toggle_mark(3, at(t, 1));
+        assert!(!h.contains_page(3));
+        assert!(h.trail_back.is_empty());
+    }
+
+    #[test]
+    fn scenario_back_on_the_only_marked_page_stays_put() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.mark_page(3, at(t, 0));
+        assert_eq!(h.step_trail_back(3, at(t, 1)), None);
+        assert!(h.contains_page(3));
+        assert!(h.trail_forward.is_empty());
     }
 
     #[test]
@@ -352,12 +459,12 @@ mod tests {
     #[test]
     fn clear_empties_both_directions_and_timestamps() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(1, at(t, 0), true);
-        let _ = h.go_back(2, at(t, 1));
+        let _ = h.step_trail_back(2, at(t, 1));
         h.clear();
-        assert!(h.back.is_empty());
-        assert!(h.forward.is_empty());
+        assert!(h.trail_back.is_empty());
+        assert!(h.trail_forward.is_empty());
         assert!(h.last_visited.get(&1).is_none());
     }
 
@@ -415,47 +522,47 @@ mod tests {
     #[test]
     fn a_visit_alone_does_not_push_the_stack() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.note_visit(0, at(t, 0));
         h.note_visit(1, at(t, 1));
         assert!(!h.contains_page(0));
         assert!(!h.contains_page(1));
         assert!(h.picker_targets(9, 1).is_empty());
-        assert_eq!(h.go_back(1, at(t, 2)), None);
+        assert_eq!(h.step_trail_back(1, at(t, 2)), None);
     }
 
     #[test]
     fn store_page_marks_it_and_keeps_the_forward_tail() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(0, at(t, 0), true);
         h.begin_new_jump(2, at(t, 1), true);
-        assert_eq!(h.go_back(4, at(t, 2)), Some(2));
-        assert_eq!(h.forward.iter().copied().collect::<Vec<_>>(), vec![4]);
-        h.store_page(2, at(t, 3));
+        assert_eq!(h.step_trail_back(4, at(t, 2)), Some(2));
+        assert_eq!(h.trail_forward.iter().copied().collect::<Vec<_>>(), vec![4]);
+        h.mark_page(2, at(t, 3));
         assert!(h.contains_page(2));
-        assert_eq!(h.forward.iter().copied().collect::<Vec<_>>(), vec![4]);
-        assert_eq!(h.go_forward(2, at(t, 4)), Some(4));
+        assert_eq!(h.trail_forward.iter().copied().collect::<Vec<_>>(), vec![4]);
+        assert_eq!(h.step_trail_forward(2, at(t, 4)), Some(4));
     }
 
     #[test]
     fn store_while_still_on_the_page_is_not_a_back_step() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(0, at(t, 0), true);
-        h.store_page(3, at(t, 1));
+        h.mark_page(3, at(t, 1));
         assert!(h.contains_page(3));
-        assert_eq!(h.go_back(3, at(t, 2)), Some(0));
+        assert_eq!(h.step_trail_back(3, at(t, 2)), Some(0));
         assert!(h.contains_page(3));
-        assert_eq!(h.forward.iter().copied().collect::<Vec<_>>(), vec![3]);
-        assert_eq!(h.go_forward(0, at(t, 3)), Some(3));
+        assert_eq!(h.trail_forward.iter().copied().collect::<Vec<_>>(), vec![3]);
+        assert_eq!(h.step_trail_forward(0, at(t, 3)), Some(3));
     }
 
     #[test]
     fn stepping_away_after_store_does_not_push_the_new_page() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
-        h.store_page(1, at(t, 0));
+        let mut h = Trail::default();
+        h.mark_page(1, at(t, 0));
         // A sequential leave only notes the visit. It does not call begin_new_jump.
         h.note_visit(2, at(t, 1));
         assert!(h.contains_page(1));
@@ -471,11 +578,11 @@ mod tests {
     #[test]
     fn goto_records_the_left_page_without_a_dwell() {
         let t = Instant::now();
-        let mut h = NavHistory::default();
+        let mut h = Trail::default();
         h.begin_new_jump(4, at(t, 0), true);
         assert!(h.contains_page(4));
         assert!(!h.contains_page(9));
-        assert_eq!(h.back.iter().copied().collect::<Vec<_>>(), vec![4]);
+        assert_eq!(h.trail_back.iter().copied().collect::<Vec<_>>(), vec![4]);
     }
 
     #[test]
