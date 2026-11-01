@@ -672,7 +672,7 @@ ApplicationWindow {
                     id: historyFont
                     readonly property int fontSize: Math.max(14, Math.min(22, Math.round(root.height / 36)))
                     width: parent.width
-                    text: "1–9 jumps · j or Escape closes"
+                    text: "1–9 jumps · Ctrl+X clears all · j or Escape closes"
                     color: "#909090"
                     font.pixelSize: fontSize
                     wrapMode: Text.WordWrap

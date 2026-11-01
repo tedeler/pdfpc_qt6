@@ -447,6 +447,28 @@ mod tests {
     }
 
     #[test]
+    fn scenario_clear_forgets_marks_trail_and_picker_entries() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.begin_new_jump(0, at(t, 0), true);
+        h.mark_page(4, at(t, 1));
+        assert_eq!(h.step_trail_back(7, at(t, 2)), Some(4));
+        h.clear();
+        assert!(!h.contains_page(0) && !h.contains_page(4) && !h.contains_page(7));
+        assert!(h.picker_targets(9, 1).is_empty());
+        assert_eq!(h.step_trail_back(1, at(t, 3)), None);
+        assert_eq!(h.step_trail_forward(1, at(t, 4)), None);
+    }
+
+    #[test]
+    fn history_menu_legend_names_ctrl_x() {
+        let qml = include_str!("../qml/Presenter.qml");
+        assert!(qml.contains("Ctrl+X clears all"));
+        let session = include_str!("session.rs");
+        assert!(session.contains("ctrl && key_letter(key) == Some('x')"));
+    }
+
+    #[test]
     fn elapsed_is_seconds_through_60_then_minutes() {
         assert_eq!(format_elapsed(Duration::from_secs(0)), "0 s");
         assert_eq!(format_elapsed(Duration::from_secs(12)), "12 s");

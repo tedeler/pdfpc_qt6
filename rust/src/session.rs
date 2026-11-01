@@ -703,6 +703,10 @@ impl qobject::Session {
 
         // Jump-history picker: digit selects a target; j / Escape closes.
         if *self.history_visible() {
+            if ctrl && key_letter(key) == Some('x') {
+                self.clear_trail();
+                return;
+            }
             self.handle_history_picker_key(key, ch);
             return;
         }
@@ -1136,6 +1140,13 @@ impl qobject::Session {
                 }
             }
         }
+    }
+
+    /// J-menu Ctrl+X: forget every entry. The menu stays open and shows the empty state.
+    fn clear_trail(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().trail.clear();
+        self.as_mut().sync_history_targets_json();
+        self.sync_stack_marks();
     }
 
     fn sync_history_targets_json(self: Pin<&mut Self>) {
