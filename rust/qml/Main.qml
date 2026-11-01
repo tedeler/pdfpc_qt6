@@ -33,6 +33,7 @@ QtObject {
     // Closing either window ends the presentation.
     property Presenter presenterWindow: Presenter {
         ctrl: root.session
+        desktopPlacer: root.placer
         onClosing: Qt.quit()
     }
 

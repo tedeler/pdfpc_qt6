@@ -62,6 +62,49 @@ public:
                                    .arg(geometry.width())
                                    .arg(geometry.height());
 
+        return runScript(name, script);
+    }
+
+    // Number of KDE virtual desktops, or 0 when unknown.
+    Q_INVOKABLE int desktopCount() const
+    {
+        if (!m_available)
+            return 0;
+        QDBusMessage get = QDBusMessage::createMethodCall(
+            QStringLiteral("org.kde.KWin"), QStringLiteral("/VirtualDesktopManager"),
+            QStringLiteral("org.freedesktop.DBus.Properties"), QStringLiteral("Get"));
+        get << QStringLiteral("org.kde.KWin.VirtualDesktopManager") << QStringLiteral("count");
+        QDBusReply<QVariant> r = QDBusConnection::sessionBus().call(get);
+        return r.isValid() ? r.value().toInt() : 0;
+    }
+
+    // Moves all windows of this process to virtual desktop `number` (1-based)
+    // and makes that desktop current.
+    Q_INVOKABLE bool moveToDesktop(int number)
+    {
+        if (!m_available || number < 1)
+            return false;
+        const QString name = QStringLiteral("pdfpc-desktop-%1-%2")
+                                 .arg(QCoreApplication::applicationPid())
+                                 .arg(++m_counter);
+        const QString script = QStringLiteral(
+            "var target = workspace.desktops[%1];\n"
+            "if (target) {\n"
+            "    var list = workspace.windowList();\n"
+            "    for (var i = 0; i < list.length; ++i) {\n"
+            "        if (list[i].pid === %2) list[i].desktops = [target];\n"
+            "    }\n"
+            "    workspace.currentDesktop = target;\n"
+            "}\n")
+                                   .arg(number - 1)
+                                   .arg(QCoreApplication::applicationPid());
+        return runScript(name, script);
+    }
+
+private:
+    bool runScript(const QString &name, const QString &script)
+    {
+        const QString path = QDir::temp().filePath(name + QStringLiteral(".js"));
         QFile file(path);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
             return false;
@@ -95,7 +138,6 @@ public:
         return true;
     }
 
-private:
     bool m_available = false;
     int m_counter = 0;
 };
