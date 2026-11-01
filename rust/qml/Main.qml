@@ -33,7 +33,7 @@ QtObject {
     // Closing either window ends the presentation.
     property Presenter presenterWindow: Presenter {
         ctrl: root.session
-        desktopPlacer: root.placer
+        windowIntegration: root.windowIntegration
         onClosing: Qt.quit()
     }
 
@@ -41,6 +41,22 @@ QtObject {
         ctrl: root.session
         onClosing: Qt.quit()
     }
+
+    property Component linuxWindowIntegration: Component {
+        LinuxWindowIntegration {}
+    }
+
+    property Component nativeWindowIntegration: Component {
+        WindowIntegration {}
+    }
+
+    property Loader windowIntegrationLoader: Loader {
+        sourceComponent: Qt.platform.os === "linux"
+                         ? root.linuxWindowIntegration
+                         : root.nativeWindowIntegration
+    }
+
+    readonly property var windowIntegration: windowIntegrationLoader.item
 
     property Timer tickTimer: Timer {
         // 50 ms keeps the laser afterglow fade smooth; the clock only needs ~1 Hz.
@@ -55,25 +71,18 @@ QtObject {
         onTriggered: root.placeWindows()
     }
 
-    // KWin assigns a fullscreen surface to the output of its current screen
-    // only once the surface is mapped, so fullscreen is requested in a second
-    // step after the windows were shown (or moved) as normal windows.
+    // Map windows normally first, then apply fullscreen on the target output.
     property Timer fullScreenTimer: Timer {
         interval: 150
         onTriggered: root.enterFullScreen()
     }
 
-    property KWinPlacer placer: KWinPlacer {}
-
-    // Without KWin scripting the presenter is moved to its output by a short
-    // fullscreen request there and then restored to a normal window. KWin
-    // restores the previous geometry though, so this only helps at startup.
+    // Completes the temporary-fullscreen fallback requested by the backend.
     property Timer presenterRestoreTimer: Timer {
         interval: 250
         onTriggered: root.restorePresenter()
     }
 
-    readonly property bool wayland: Qt.platform.pluginName.indexOf("wayland") === 0
     readonly property real presenterScale: Math.SQRT1_2
 
     property Connections sessionConnections: Connections {
@@ -165,7 +174,8 @@ QtObject {
         } else {
             showWindowed(audienceWindow, aus, 0.1, 0.1, 0.8, 0.8)
         }
-        if (!session.windowed || (wayland && screenCount() > 1))
+        if (!session.windowed
+                || (windowIntegration && windowIntegration.needsDeferredMapping(screenCount())))
             fullScreenTimer.start()
         presenterWindow.raise()
         presenterWindow.requestActivate()
@@ -173,8 +183,7 @@ QtObject {
     }
 
     function enterFullScreen() {
-        // KWin maps new normal windows on the active output and Qt then
-        // reports that output as the window's screen; restore the target.
+        // Apply target-output assignment after both windows have been mapped.
         var ps = screenAt(session.presenter_screen)
         var aus = screenAt(session.audience_screen)
         if (!session.windowed) {
@@ -182,8 +191,14 @@ QtObject {
                 audienceWindow.screen = aus
             audienceWindow.visibility = Window.FullScreen
         }
-        if (wayland && ps && screenCount() > 1) {
-            if (!movePresenterWithKWin(ps)) {
+        if (ps && screenCount() > 1 && windowIntegration) {
+            var pw = Math.round(ps.width * presenterScale)
+            var ph = Math.round(ps.height * presenterScale)
+            var rect = Qt.rect(ps.virtualX + Math.round((ps.width - pw) / 2),
+                               ps.virtualY + Math.round((ps.height - ph) / 2), pw, ph)
+            var placement = windowIntegration.preparePresenterPlacement(
+                        presenterWindow, ps, rect, screenCount())
+            if (placement === "fullscreen") {
                 presenterWindow.screen = ps
                 presenterWindow.visibility = Window.FullScreen
                 presenterRestoreTimer.start()
@@ -192,16 +207,6 @@ QtObject {
         presenterWindow.raise()
         presenterWindow.requestActivate()
         session.applyWindowIcons()
-    }
-
-    function movePresenterWithKWin(screen) {
-        if (!placer.available)
-            return false
-        var w = Math.round(screen.width * presenterScale)
-        var h = Math.round(screen.height * presenterScale)
-        var rect = Qt.rect(screen.virtualX + Math.round((screen.width - w) / 2),
-                           screen.virtualY + Math.round((screen.height - h) / 2), w, h)
-        return placer.setFrameGeometry(presenterWindow.title, rect)
     }
 
     function restorePresenter() {

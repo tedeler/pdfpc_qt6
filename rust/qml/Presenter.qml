@@ -37,8 +37,8 @@ ApplicationWindow {
         }
     }
 
-    property var desktopPlacer: null
-    readonly property int desktopCount: desktopPlacer ? desktopPlacer.desktopCount() : 0
+    property var windowIntegration: null
+    readonly property int desktopCount: windowIntegration ? windowIntegration.desktopCount : 0
 
     header: ToolBar {
         visible: root.desktopCount > 1
@@ -59,7 +59,7 @@ ApplicationWindow {
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Move presentation to desktop %1").arg(index + 1)
                     onClicked: {
-                        root.desktopPlacer.moveToDesktop(index + 1)
+                        root.windowIntegration.moveToDesktop(index + 1)
                         focusScope.forceActiveFocus()
                     }
                 }

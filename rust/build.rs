@@ -9,6 +9,8 @@ fn main() {
             "qml/Presenter.qml",
             "qml/Audience.qml",
             "qml/SlideView.qml",
+            "qml/WindowIntegration.qml",
+            "qml/LinuxWindowIntegration.qml",
         ]),
     )
     .qt_module("Network")
