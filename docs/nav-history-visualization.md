@@ -17,7 +17,7 @@ Echte Sprünge sind dagegen Punkte, an denen man bewusst eine andere Stelle in d
 
 - per GoTo zu einer bestimmten Folie,
 - über ein internes PDF-Linkziel,
-- über eine Markierung auf dem Stack.
+- durch Drücken von `m`, das die aktuelle Folie auf dem Stack markiert oder die Markierung wieder entfernt.
 
 Diese Sprünge sind für die Navigation wichtig und müssen sauber im Verlauf bleiben.
 
@@ -49,17 +49,17 @@ flowchart TD
 
 ### 1.3 Was ist ein Stack-Eintrag?
 
-Ein Stack-Eintrag ist ein bewusst markierter Rückkehrpunkt. Er entsteht nur bei wichtigen Aktionen, zum Beispiel:
+Ein markierter Stack-Eintrag ist ein bewusst gespeicherter Rückkehrpunkt. Er entsteht bei wichtigen Aktionen, zum Beispiel:
 
 - GoTo zu einer Seite,
 - Klick auf einen PDF-Link,
-- aktive Markierung einer Folie auf dem Stack.
+- Markieren der aktuellen Folie mit `m` (ein erneutes `m` entfernt sie wieder).
 
 Diese Einträge sind für die Präsentation besonders wichtig, weil sie signalisieren: "An dieser Stelle wurde bewusst eine neue Richtung gewählt. Wenn ich später zurück gehe, soll ich diese Stelle nicht einfach als normalen Schritt behandeln."
 
 ### 1.4 Was ist mit Back/Forward und normalen Schritten?
 
-Back/Forward und normale Schritt-Navigationen sind Teil des Ablaufverlaufs. Sie ändern die aktuelle Position, aber sie erzeugen keinen neuen bedeutenden Stack-Punkt.
+Back/Forward und normale Schritt-Navigationen sind Teil des Ablaufverlaufs. Normale Schritte erzeugen keinen Stack-Eintrag. Back/Forward erzeugt ebenfalls keinen neuen markierten Sprungpunkt, verschiebt aber besuchte Seiten zwischen Back- und Forward-Seite des Trails, damit die Navigation zurück und wieder vorwärts möglich bleibt.
 
 Das ist wichtig, weil Back/Forward die Reise durch die bereits gesehenen Seiten zeigen soll, nicht aber jedes einzelne Blättern als neue historische Markierung festhalten.
 
@@ -198,20 +198,20 @@ Damit gilt für `+/-1` und `+/-10`:
 
 Die gleiche Logik gilt für die Tastensteuerung, etwa Pfeil rechts, links, Space, PageUp und PageDown.
 
-### 2.3 History-Back und History-Forward: Verlauf, aber kein Stack-Eintrag
+### 2.3 Back und Forward: Trail-Wanderung, aber kein neuer markierter Sprungpunkt
 
 Hier ist das Verhalten ebenfalls bewusst getrennt:
 
 ```rust
-pub fn history_back(...) {
-    let target = self.as_mut().rust_mut().nav_history.go_back(cur, Instant::now());
+pub fn trail_back(...) {
+    let target = self.as_mut().rust_mut().trail.step_trail_back(cur, Instant::now());
     if let Some(target) = target {
         self.apply_history_page(target);
     }
 }
 
-pub fn history_forward(...) {
-    let target = self.as_mut().rust_mut().nav_history.go_forward(cur, Instant::now());
+pub fn trail_forward(...) {
+    let target = self.as_mut().rust_mut().trail.step_trail_forward(cur, Instant::now());
     if let Some(target) = target {
         self.apply_history_page(target);
     }
@@ -224,8 +224,8 @@ fn apply_history_page(self: Pin<&mut Self>, target: i32) {
 
 Machen wir die Semantik explizit:
 
-- Back/Forward verändert den Verlauf
-- Back/Forward erzeugt keinen neuen Stack-Punkt
+- Back/Forward verschiebt Seiten zwischen Back- und Forward-Trail
+- Back/Forward erzeugt keinen neuen markierten Sprungpunkt
 - der Verlauf bleibt konsistent, aber er ist kein defaultmäßiger Jump-Stack
 
 ```mermaid
@@ -234,15 +234,15 @@ sequenceDiagram
     participant Session
     participant History
 
-    User->>Session: history_back()
-    Session->>History: go_back(current)
+    User->>Session: trail_back()
+    Session->>History: step_trail_back(current)
     History-->>Session: Verlauf verschiebt sich
-    Session-->>User: kein neuer Stack-Eintrag
+    Session-->>User: kein neuer markierter Sprungpunkt
 
-    User->>Session: history_forward()
-    Session->>History: go_forward(current)
+    User->>Session: trail_forward()
+    Session->>History: step_trail_forward(current)
     History-->>Session: Verlauf wird wiederhergestellt
-    Session-->>User: kein neuer Stack-Eintrag
+    Session-->>User: kein neuer markierter Sprungpunkt
 ```
 
 ### 2.4 Echte Sprünge: GoTo, PDF-Link, Stack-Markierung
@@ -379,17 +379,18 @@ Das ist genau das Verhalten, das für eine Präsentationssoftware sinnvoll ist: 
 Die Kernstellen im Code:
 
 - `rust/src/trail.rs`
-  - `LeaveKind`
-  - `stack_action()`
-  - `go_back()`
-  - `go_forward()`
+  - `step_trail_back()`
+  - `step_trail_forward()`
   - `begin_new_jump()`
 
 - `rust/src/session.rs`
+  - `LeaveKind`
+  - `stack_action()`
   - `jump_pages()`
   - `follow_link()`
-  - `history_back()`
-  - `history_forward()`
+  - `trail_back()`
+  - `trail_forward()`
+  - `apply_history_page()`
   - `go_to_page()`
 
 Diese Stellen zeigen die genaue Umsetzung des beschriebenen Verhaltens.
