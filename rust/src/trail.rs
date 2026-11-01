@@ -16,8 +16,8 @@ use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
-/// Minimum number of page changes retained in the current session.
-pub const NAV_HISTORY_MAX: usize = 100;
+/// Maximum number of entries kept on each side of the trail.
+pub const TRAIL_MAX: usize = 10;
 
 /// Default minimum time on a page before it may enter history (5 seconds).
 pub const HISTORY_DWELL_DEFAULT: Duration = Duration::from_secs(5);
@@ -186,7 +186,7 @@ impl Trail {
 }
 
 fn trim_front(q: &mut VecDeque<i32>, marked: &mut HashSet<i32>, other: &VecDeque<i32>) {
-    while q.len() > NAV_HISTORY_MAX {
+    while q.len() > TRAIL_MAX {
         let Some(page) = q.pop_front() else {
             break;
         };
@@ -281,15 +281,15 @@ mod tests {
     }
 
     #[test]
-    fn retains_at_least_100_entries() {
+    fn keeps_only_the_last_10_entries() {
         let t = Instant::now();
         let mut h = Trail::default();
-        for i in 0..150 {
+        for i in 0..30 {
             h.begin_new_jump(i, at(t, i as u64), true);
         }
-        assert_eq!(h.trail_back.len(), NAV_HISTORY_MAX);
-        assert_eq!(h.step_trail_back(150, at(t, 200)), Some(149));
-        for n in 0..(NAV_HISTORY_MAX - 1) {
+        assert_eq!(h.trail_back.len(), TRAIL_MAX);
+        assert_eq!(h.step_trail_back(30, at(t, 200)), Some(29));
+        for n in 0..(TRAIL_MAX - 1) {
             assert!(h.step_trail_back(0, at(t, 201 + n as u64)).is_some());
         }
         assert_eq!(h.step_trail_back(0, at(t, 400)), None);
