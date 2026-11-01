@@ -40,6 +40,7 @@ pub mod qobject {
         #[qproperty(bool, help_visible)]
         #[qproperty(bool, history_visible)]
         #[qproperty(QString, history_targets_json)]
+        #[qproperty(QString, trail_strip_json)]
         #[qproperty(bool, current_on_stack)]
         #[qproperty(bool, next_on_stack)]
         #[qproperty(bool, recent_visible)]
@@ -196,7 +197,7 @@ pub mod qobject {
 }
 
 use crate::laser_trail::{self, MIN_POINT_GAP};
-use crate::trail::{format_elapsed, Trail, HISTORY_PICKER_MAX};
+use crate::trail::{format_elapsed, Trail, HISTORY_PICKER_MAX, TRAIL_STRIP_SLOTS};
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -320,6 +321,7 @@ pub struct SessionRust {
     help_visible: bool,
     history_visible: bool,
     history_targets_json: QString,
+    trail_strip_json: QString,
     current_on_stack: bool,
     next_on_stack: bool,
     recent_visible: bool,
@@ -375,6 +377,7 @@ impl Default for SessionRust {
             help_visible: false,
             history_visible: false,
             history_targets_json: QString::from("[]"),
+            trail_strip_json: QString::from("{\"cursor\":0,\"pages\":[]}"),
             current_on_stack: false,
             next_on_stack: false,
             recent_visible: false,
@@ -1231,6 +1234,11 @@ impl qobject::Session {
         let next = *self.next_page();
         let cur_on = self.rust().trail.contains_page(cur);
         let next_on = next >= 0 && self.rust().trail.contains_page(next);
+        let strip = self.rust().trail.strip(TRAIL_STRIP_SLOTS, cur);
+        let pages: Vec<i32> = strip.pages.iter().map(|p| p.unwrap_or(-1)).collect();
+        let json = json!({ "cursor": strip.cursor, "pages": pages });
+        self.as_mut()
+            .set_trail_strip_json(QString::from(&json.to_string()));
         self.as_mut().set_current_on_stack(cur_on);
         self.set_next_on_stack(next_on);
     }

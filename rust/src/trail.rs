@@ -22,6 +22,9 @@ pub const TRAIL_MAX: usize = 10;
 /// Default minimum time on a page before it may enter history (5 seconds).
 pub const HISTORY_DWELL_DEFAULT: Duration = Duration::from_secs(5);
 
+/// Number of boxes in the trail strip under the preview.
+pub const TRAIL_STRIP_SLOTS: usize = 10;
+
 /// Maximum entries shown in the jump-target picker (keys `1`–`9`).
 pub const HISTORY_PICKER_MAX: usize = 9;
 
@@ -29,6 +32,16 @@ pub const HISTORY_PICKER_MAX: usize = 9;
 pub struct JumpTarget {
     pub page: i32,
     pub last_visited: Instant,
+}
+
+/// Fixed-size view of the trail: back pages, the cursor, then forward pages.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrailStrip {
+    /// One entry per box, left to right. `None` is an empty box.
+    pub pages: Vec<Option<i32>>,
+    /// The current position sits before `pages[cursor]`: boxes left of it are
+    /// Back, boxes from it onwards are Forward.
+    pub cursor: usize,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -145,6 +158,33 @@ impl Trail {
         if !self.trail_back.contains(&page) && !self.trail_forward.contains(&page) {
             self.marked.remove(&page);
         }
+    }
+
+    /// Lay the trail out in `slots` boxes: oldest back page on the left, the
+    /// nearest forward page right after the cursor. The current page itself is
+    /// never a box. Unused slots on one side go to the other side; leftovers
+    /// stay empty on the right.
+    pub fn strip(&self, slots: usize, current: i32) -> TrailStrip {
+        let back: Vec<i32> = self
+            .trail_back
+            .iter()
+            .copied()
+            .filter(|&p| p != current)
+            .collect();
+        let forward: Vec<i32> = self
+            .trail_forward
+            .iter()
+            .rev()
+            .copied()
+            .filter(|&p| p != current)
+            .collect();
+        let half = slots / 2;
+        let nb = back.len().min(slots.saturating_sub(forward.len().min(half)).max(half));
+        let nf = forward.len().min(slots - nb);
+        let mut pages: Vec<Option<i32>> = back[back.len() - nb..].iter().map(|&p| Some(p)).collect();
+        pages.extend(forward[..nf].iter().map(|&p| Some(p)));
+        pages.resize(slots, None);
+        TrailStrip { pages, cursor: nb }
     }
 
     /// Up to `max` jump targets, most recently visited first, skipping `current`.
@@ -466,6 +506,83 @@ mod tests {
         assert!(qml.contains("Ctrl+X clears all"));
         let session = include_str!("session.rs");
         assert!(session.contains("ctrl && key_letter(key) == Some('x')"));
+    }
+
+    fn strip_of(h: &Trail, current: i32) -> (Vec<i32>, usize) {
+        let s = h.strip(TRAIL_STRIP_SLOTS, current);
+        assert_eq!(s.pages.len(), TRAIL_STRIP_SLOTS);
+        (s.pages.iter().map(|p| p.unwrap_or(-1)).collect(), s.cursor)
+    }
+
+    #[test]
+    fn strip_empty_trail_has_ten_empty_boxes_and_cursor_at_left() {
+        let h = Trail::default();
+        let (pages, cursor) = strip_of(&h, 0);
+        assert_eq!(pages, vec![-1; 10]);
+        assert_eq!(cursor, 0);
+    }
+
+    #[test]
+    fn strip_back_left_of_cursor_forward_right_of_it() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.begin_new_jump(0, at(t, 0), true);
+        h.begin_new_jump(2, at(t, 1), true);
+        h.begin_new_jump(4, at(t, 2), true);
+        // On 6, back = [0,2,4], forward empty: arrow right of the last Back box.
+        let (pages, cursor) = strip_of(&h, 6);
+        assert_eq!(&pages[..4], &[0, 2, 4, -1]);
+        assert_eq!(cursor, 3);
+        // Two steps back: on 2, forward holds 4 then 6 (nearest first).
+        assert_eq!(h.step_trail_back(6, at(t, 3)), Some(4));
+        assert_eq!(h.step_trail_back(4, at(t, 4)), Some(2));
+        let (pages, cursor) = strip_of(&h, 2);
+        assert_eq!(&pages[..4], &[0, 4, 6, -1]);
+        assert_eq!(cursor, 1);
+    }
+
+    #[test]
+    fn strip_never_shows_the_current_page() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        h.mark_page(3, at(t, 0));
+        let (pages, cursor) = strip_of(&h, 3);
+        assert_eq!(pages, vec![-1; 10]);
+        assert_eq!(cursor, 0);
+    }
+
+    #[test]
+    fn strip_full_trail_fits_exactly_ten_boxes() {
+        let t = Instant::now();
+        let mut h = Trail::default();
+        for i in 0..30 {
+            h.begin_new_jump(i, at(t, i as u64), true);
+        }
+        let (pages, cursor) = strip_of(&h, 99);
+        assert_eq!(pages, (20..30).collect::<Vec<_>>());
+        assert_eq!(cursor, 10);
+        // Walk back 8 to page 22: two Back boxes, the rest of the strip is Forward.
+        let mut cur = 99;
+        for n in 0..8 {
+            cur = h.step_trail_back(cur, at(t, 100 + n)).unwrap();
+        }
+        assert_eq!(cur, 22);
+        let (pages, cursor) = strip_of(&h, cur);
+        assert_eq!(pages, vec![20, 21, 23, 24, 25, 26, 27, 28, 29, 99]);
+        assert_eq!(cursor, 2);
+    }
+
+    #[test]
+    fn trail_strip_sits_between_preview_and_status_bar() {
+        let qml = include_str!("../qml/Presenter.qml");
+        let top = qml.find("id: topRow").expect("preview row");
+        let strip = qml.find("id: trailStrip").expect("trail strip");
+        let bar = qml.find("id: bottomBar").expect("status bar");
+        assert!(top < strip && strip < bar);
+        assert!(qml.contains("readonly property int slots: 10"));
+        assert!(qml.contains("width: parent.width"));
+        assert!(qml.contains("trail_strip_json"));
+        assert!(qml.contains("trailStrip.height"));
     }
 
     #[test]
