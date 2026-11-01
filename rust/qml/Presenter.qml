@@ -282,7 +282,7 @@ ApplicationWindow {
             Row {
                 id: topRow
                 width: parent.width
-                height: parent.height - bottomBar.height - 12
+                height: parent.height - bottomBar.height - trailStrip.height - 24
                 spacing: 12
 
                 SlideView {
@@ -326,6 +326,75 @@ ApplicationWindow {
                     interactive: false
                     ctrl: root.ctrl
                     opacity: root.ctrl.next_page >= 0 ? 1.0 : 0.35
+                }
+            }
+
+            Item {
+                id: trailStrip
+                readonly property int slots: 10
+                readonly property real gap: 8
+                readonly property var strip: JSON.parse(root.ctrl.trail_strip_json)
+                readonly property real cellW: (width - gap * (slots - 1)) / slots
+                readonly property real boxH: cellW * 9 / 16
+                readonly property real arrowH: Math.max(14, Math.round(root.height / 50))
+                readonly property real labelH: Math.max(14, Math.round(root.height / 50))
+                width: parent.width
+                height: arrowH + boxH + labelH + 4
+
+                // Marks the current position: Back is left of it, Forward right of it.
+                Text {
+                    id: trailArrow
+                    readonly property real boundary: trailStrip.strip.cursor * (trailStrip.cellW + trailStrip.gap) - trailStrip.gap / 2
+                    x: Math.max(0, Math.min(trailStrip.width - width, boundary - width / 2))
+                    y: 0
+                    height: trailStrip.arrowH
+                    text: "▼"
+                    color: "#2f8fd8"
+                    font.pixelSize: trailStrip.arrowH
+                    verticalAlignment: Text.AlignVCenter
+                }
+
+                Repeater {
+                    model: trailStrip.slots
+                    delegate: Item {
+                        id: trailBox
+                        required property int index
+                        readonly property int boxPage: index < trailStrip.strip.pages.length ? trailStrip.strip.pages[index] : -1
+                        x: index * (trailStrip.cellW + trailStrip.gap)
+                        y: trailStrip.arrowH
+                        width: trailStrip.cellW
+                        height: trailStrip.boxH + trailStrip.labelH + 4
+
+                        Rectangle {
+                            width: parent.width
+                            height: trailStrip.boxH
+                            color: "#111111"
+                            border.width: 1
+                            border.color: index < trailStrip.strip.cursor ? "#606060" : "#2f8fd8"
+                            opacity: trailBox.boxPage >= 0 ? 1.0 : 0.35
+
+                            SlideView {
+                                anchors.fill: parent
+                                anchors.margins: 1
+                                pdfSource: root.ctrl.pdf_url
+                                page: trailBox.boxPage
+                                strokesJson: "[]"
+                                pointerVisible: false
+                                interactive: false
+                                ctrl: root.ctrl
+                            }
+                        }
+
+                        Text {
+                            y: trailStrip.boxH + 4
+                            width: parent.width
+                            height: trailStrip.labelH
+                            horizontalAlignment: Text.AlignHCenter
+                            text: trailBox.boxPage >= 0 ? (trailBox.boxPage + 1) : ""
+                            color: "#c0c0c0"
+                            font.pixelSize: trailStrip.labelH
+                        }
+                    }
                 }
             }
 
@@ -672,7 +741,7 @@ ApplicationWindow {
                     id: historyFont
                     readonly property int fontSize: Math.max(14, Math.min(22, Math.round(root.height / 36)))
                     width: parent.width
-                    text: "1–9 jumps · j or Escape closes"
+                    text: "1–9 jumps · Ctrl+X clears all · j or Escape closes"
                     color: "#909090"
                     font.pixelSize: fontSize
                     wrapMode: Text.WordWrap

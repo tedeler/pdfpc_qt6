@@ -116,7 +116,7 @@ Das bedeutet:
 
 ## Teil 2: Technische Doku
 
-Die technische Umsetzung sitzt in den Dateien `rust/src/nav_history.rs` und `rust/src/session.rs`.
+Die technische Umsetzung sitzt in den Dateien `rust/src/trail.rs` und `rust/src/session.rs`.
 
 ### 2.1 Die grundlegende Unterscheidung
 
@@ -378,7 +378,7 @@ Das ist genau das Verhalten, das für eine Präsentationssoftware sinnvoll ist: 
 
 Die Kernstellen im Code:
 
-- `rust/src/nav_history.rs`
+- `rust/src/trail.rs`
   - `LeaveKind`
   - `stack_action()`
   - `go_back()`

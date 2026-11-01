@@ -40,6 +40,7 @@ pub mod qobject {
         #[qproperty(bool, help_visible)]
         #[qproperty(bool, history_visible)]
         #[qproperty(QString, history_targets_json)]
+        #[qproperty(QString, trail_strip_json)]
         #[qproperty(bool, current_on_stack)]
         #[qproperty(bool, next_on_stack)]
         #[qproperty(bool, recent_visible)]
@@ -170,12 +171,12 @@ pub mod qobject {
         fn follow_link(self: Pin<&mut Self>, page: i32);
 
         #[qinvokable]
-        #[cxx_name = "historyBack"]
-        fn history_back(self: Pin<&mut Self>);
+        #[cxx_name = "trailBack"]
+        fn trail_back(self: Pin<&mut Self>);
 
         #[qinvokable]
-        #[cxx_name = "historyForward"]
-        fn history_forward(self: Pin<&mut Self>);
+        #[cxx_name = "trailForward"]
+        fn trail_forward(self: Pin<&mut Self>);
 
         #[qinvokable]
         #[cxx_name = "toggleHistory"]
@@ -196,7 +197,7 @@ pub mod qobject {
 }
 
 use crate::laser_trail::{self, MIN_POINT_GAP};
-use crate::nav_history::{format_elapsed, NavHistory, HISTORY_PICKER_MAX};
+use crate::trail::{format_elapsed, Trail, HISTORY_PICKER_MAX, TRAIL_STRIP_SLOTS};
 use crate::recent::{self, RecentEntry};
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -258,7 +259,7 @@ enum LeaveKind {
     Menu,
     /// Arrows, space, Shift±10, Home/End, and the other step keys. No stack change.
     Step,
-    /// Ctrl+←/→ history walk — the stacks move in history_back/forward.
+    /// Ctrl+←/→ history walk — the stacks move in trail_back/forward.
     History,
 }
 
@@ -320,6 +321,7 @@ pub struct SessionRust {
     help_visible: bool,
     history_visible: bool,
     history_targets_json: QString,
+    trail_strip_json: QString,
     current_on_stack: bool,
     next_on_stack: bool,
     recent_visible: bool,
@@ -341,7 +343,7 @@ pub struct SessionRust {
     pending_page: Option<i32>,
     recent_entries: Vec<RecentEntry>,
     /// Jump history. Sequential steps do not push; go-to, links, and `m` do.
-    nav_history: NavHistory,
+    trail: Trail,
     /// Last time the open J-menu refreshed its visited-ago labels.
     history_menu_refreshed: Option<Instant>,
 }
@@ -375,6 +377,7 @@ impl Default for SessionRust {
             help_visible: false,
             history_visible: false,
             history_targets_json: QString::from("[]"),
+            trail_strip_json: QString::from("{\"cursor\":0,\"pages\":[]}"),
             current_on_stack: false,
             next_on_stack: false,
             recent_visible: false,
@@ -392,7 +395,7 @@ impl Default for SessionRust {
             pdf_path: String::new(),
             pending_page: None,
             recent_entries: recent::load(),
-            nav_history: NavHistory::default(),
+            trail: Trail::default(),
             history_menu_refreshed: None,
         }
     }
@@ -422,7 +425,7 @@ impl qobject::Session {
             rust.timer_paused_flag = false;
             rust.accumulated = Duration::ZERO;
             rust.last_tick = None;
-            rust.nav_history.clear();
+            rust.trail.clear();
             recent::touch(&mut rust.recent_entries, &abs_str, restore_page);
             recent::save(&rust.recent_entries);
         }
@@ -703,6 +706,10 @@ impl qobject::Session {
 
         // Jump-history picker: digit selects a target; j / Escape closes.
         if *self.history_visible() {
+            if ctrl && key_letter(key) == Some('x') {
+                self.clear_trail();
+                return;
+            }
             self.handle_history_picker_key(key, ch);
             return;
         }
@@ -733,11 +740,11 @@ impl qobject::Session {
         }
 
         if ctrl && key == KEY_LEFT {
-            self.history_back();
+            self.trail_back();
             return;
         }
         if ctrl && key == KEY_RIGHT {
-            self.history_forward();
+            self.trail_forward();
             return;
         }
         if ctrl && key_letter(key) == Some('g') {
@@ -931,7 +938,7 @@ impl qobject::Session {
         self.stack_jump(page);
     }
 
-    pub fn history_back(mut self: Pin<&mut Self>) {
+    pub fn trail_back(mut self: Pin<&mut Self>) {
         if *self.help_visible()
             || *self.recent_visible()
             || *self.history_visible()
@@ -944,14 +951,14 @@ impl qobject::Session {
         let target = self
             .as_mut()
             .rust_mut()
-            .nav_history
-            .go_back(cur, Instant::now());
+            .trail
+            .step_trail_back(cur, Instant::now());
         if let Some(target) = target {
             self.apply_history_page(target);
         }
     }
 
-    pub fn history_forward(mut self: Pin<&mut Self>) {
+    pub fn trail_forward(mut self: Pin<&mut Self>) {
         if *self.help_visible()
             || *self.recent_visible()
             || *self.history_visible()
@@ -963,8 +970,8 @@ impl qobject::Session {
         let target = self
             .as_mut()
             .rust_mut()
-            .nav_history
-            .go_forward(cur, Instant::now());
+            .trail
+            .step_trail_forward(cur, Instant::now());
         if let Some(target) = target {
             self.apply_history_page(target);
         }
@@ -1072,8 +1079,8 @@ impl qobject::Session {
         }
         self.as_mut()
             .rust_mut()
-            .nav_history
-            .toggle_page(cur, Instant::now());
+            .trail
+            .toggle_mark(cur, Instant::now());
         self.sync_stack_marks();
     }
 
@@ -1088,23 +1095,23 @@ impl qobject::Session {
             return;
         }
         let now = Instant::now();
-        self.as_mut().rust_mut().nav_history.note_visit(cur, now);
+        self.as_mut().rust_mut().trail.note_visit(cur, now);
         match stack_action(kind) {
             StackAction::None => {}
             StackAction::RecordAndTruncate => {
                 self.as_mut()
                     .rust_mut()
-                    .nav_history
+                    .trail
                     .begin_new_jump(cur, now, true);
             }
             StackAction::TruncateOnly => {
                 self.as_mut()
                     .rust_mut()
-                    .nav_history
+                    .trail
                     .begin_new_jump(cur, now, false);
             }
         }
-        self.as_mut().rust_mut().nav_history.note_visit(target, now);
+        self.as_mut().rust_mut().trail.note_visit(target, now);
         self.as_mut().maybe_start_timer_on_leave_first(cur);
         self.as_mut().clear_laser_trails();
         self.as_mut().set_current_page(target);
@@ -1127,7 +1134,7 @@ impl qobject::Session {
                 let cur = *self.current_page();
                 let targets = self
                     .rust()
-                    .nav_history
+                    .trail
                     .picker_targets(HISTORY_PICKER_MAX, cur);
                 if let Some(target) = targets.get(idx) {
                     let page = target.page;
@@ -1138,12 +1145,19 @@ impl qobject::Session {
         }
     }
 
+    /// J-menu Ctrl+X: forget every entry. The menu stays open and shows the empty state.
+    fn clear_trail(mut self: Pin<&mut Self>) {
+        self.as_mut().rust_mut().trail.clear();
+        self.as_mut().sync_history_targets_json();
+        self.sync_stack_marks();
+    }
+
     fn sync_history_targets_json(self: Pin<&mut Self>) {
         let now = Instant::now();
         let cur = *self.current_page();
         let targets = self
             .rust()
-            .nav_history
+            .trail
             .picker_targets(HISTORY_PICKER_MAX, cur);
         let arr: Vec<Value> = targets
             .iter()
@@ -1218,8 +1232,13 @@ impl qobject::Session {
     fn sync_stack_marks(mut self: Pin<&mut Self>) {
         let cur = *self.current_page();
         let next = *self.next_page();
-        let cur_on = self.rust().nav_history.contains_page(cur);
-        let next_on = next >= 0 && self.rust().nav_history.contains_page(next);
+        let cur_on = self.rust().trail.contains_page(cur);
+        let next_on = next >= 0 && self.rust().trail.contains_page(next);
+        let strip = self.rust().trail.strip(TRAIL_STRIP_SLOTS, cur);
+        let pages: Vec<i32> = strip.pages.iter().map(|p| p.unwrap_or(-1)).collect();
+        let json = json!({ "cursor": strip.cursor, "pages": pages });
+        self.as_mut()
+            .set_trail_strip_json(QString::from(&json.to_string()));
         self.as_mut().set_current_on_stack(cur_on);
         self.set_next_on_stack(next_on);
     }
