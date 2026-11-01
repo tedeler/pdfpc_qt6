@@ -44,11 +44,11 @@ packaging/build-deb.sh
 Package and command are both **pdfpc-qt6** (`/usr/bin/pdfpc-qt6`), so they coexist with classic `pdfpc` (`pdf-presenter-console`). The package installs `/usr/share/applications/pdfpc-qt6.desktop` and a hicolor icon named `pdfpc-qt6`, so the application shows up in the KDE start menu. Presenter and audience window titles include the version read from [`VERSION`](VERSION) at build time.
 
 ```bash
-sudo apt install ./pdfpc-qt6_1.12_amd64.deb
-# or: sudo dpkg -i pdfpc-qt6_1.12_amd64.deb
+sudo apt install ./pdfpc-qt6_1.14_amd64.deb
+# or: sudo dpkg -i pdfpc-qt6_1.14_amd64.deb
 ```
 
-CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on every push/PR. Pushing a version tag that matches `VERSION` (e.g. `v1.11`) additionally publishes a GitHub Release with the same package.
+CI builds the `.deb` on **Ubuntu 26.04** (matching Kubuntu 26.04 library package names) and uploads it as an artifact on pushes to `main` and on pull requests. Pushing a version tag that matches `VERSION` (e.g. `v1.14`) additionally publishes a GitHub Release with the same package.
 
 ### Updates
 
@@ -82,7 +82,7 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | Home / End | First / last slide |
 | `g`, digits, Enter | Go to slide (1-based); the slide you leave goes on the jump stack |
 | Click PDF link | Jump to linked page (e.g. Beamer TOC); the slide you leave goes on the jump stack |
-| `m` | Mark the current slide on the jump stack (no page change) |
+| `m` | Add/remove the current slide on the jump stack (no page change) |
 | Ctrl+← | History back (pages ahead of you stay available) |
 | Ctrl+→ | History forward |
 | `j`, then `1`–`9` | Jump history, at most 9 pages, with time since each was last visited |
@@ -102,7 +102,7 @@ Wayland clients cannot position their own normal windows. Under KDE Plasma (KWin
 | `h` | Show / hide the shortcut help (presenter only) |
 | Escape | Close recent/help/history, cancel go-to, unblank, unfreeze, resume timer, normal mouse |
 
-Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the jump-history list (`j`) is open, `1`–`9` pick a target, Ctrl+X clears all entries, and `j`/Escape closes it. The list shows at most 9 other pages and, after each one, how long since you were last on it (`12 s`, or `3 min` past a minute). Going back does not delete the pages in front of you; Ctrl+→ walks back along them. A new jump (link, go-to, or the list) drops only that forward tail. A slide enters the stack only when you leave it with `g` or a PDF link, or when you press `m` on it. Arrows, Space, Shift+←/→, Home/End, and the other step keys do not. When the current slide is on the stack, the presenter status row shows a STACK tag in the same style as LASER. Below the previews, a strip of 10 boxes shows the trail with thumbnails and page numbers: an arrow marks the current position, boxes to its left are Back, boxes to its right are Forward (at most 10 entries are kept). The `j` list lives on the presenter window. While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
+Keys work in both windows. While the help is open only `h`, Escape and `F3` act. While the jump-history list (`j`) is open, `1`–`9` pick a target, Ctrl+X clears all entries, and `j`/Escape closes it. The list shows at most 9 other pages and, after each one, how long since you were last on it (`12 s`, or `3 min` past a minute). Going back does not delete the pages in front of you; Ctrl+→ walks back along them. A new jump (link, go-to, or the list) drops only that forward tail. Leaving a page with `g` or a PDF link marks it on the jump stack; `m` toggles the current page's membership without changing pages. Back/Forward also retain the pages they traverse in the trail, while normal step keys do not add pages. When the current slide is on the stack, the presenter status row shows a STACK tag in the same style as LASER. Below the previews, a strip of 10 boxes shows the trail with thumbnails and page numbers: an arrow marks the current position, boxes to its left are Back, boxes to its right are Forward (up to 10 pages are retained on each side). The `j` list lives on the presenter window. While the recent-files dialog is open, Escape/`F3` closes it when a PDF is already loaded. Unlike classic pdfpc, `h` shows help instead of hiding the presentation. Quit by closing a window.
 
 Timer starts when you leave page 1, or with `s` (needed again after Ctrl+T reset). Shown only on the presenter.
 
@@ -121,7 +121,7 @@ Check against Poppler/Evince using the Beamer decks in `demo/` (see `demo/README
 1. Open `demo/pdfpc-demo.pdf` on Kubuntu with two displays.
 2. Confirm presenter (current + next + page + timer) vs audience (current only).
 3. Navigate, `Shift+S`, blank (`b`), freeze (`f`), Ctrl+G (jump to frozen), goto (`g`), laser (`2`), pen (`3`/`c`).
-4. If a window lands on the wrong screen under Wayland, report it — placement uses `Window.screen` + fullscreen; a KWin script can be added as a fallback.
+4. Confirm the windows land on the intended screens under Wayland; KWin placement uses a short-lived script, with a fullscreen fallback at startup.
 
 ## License
 
